@@ -322,6 +322,15 @@ watch(
 	{ immediate: true },
 )
 
+watch(canHost, value => {
+	selectedRole.value = value ? 'host' : 'player'
+	if (!value && activePanel.value === 'answer') {
+		toolDockOpen.value = false
+		activePanel.value = 'canvas'
+		answerHidden.value = true
+	}
+})
+
 onMounted(async () => {
 	window.addEventListener('resize', resizeCanvas)
 	window.addEventListener('beforeunload', handleBeforeUnload)
@@ -516,6 +525,7 @@ function connectSocket(code: string) {
 		socket.on('room-updated', (nextRoom: RoomState) => {
 			if (nextRoom.code !== room.value?.code) return
 			room.value = nextRoom
+			selectedRole.value = canHost.value ? 'host' : 'player'
 			syncSelectedSoupFromRoom(nextRoom)
 			if (nextRoom.settlement) settlement.value = nextRoom.settlement
 			nextTick(() => restoreCanvas())
@@ -525,6 +535,27 @@ function connectSocket(code: string) {
 			(event: { roomCode: string; message: string; at: string }) => {
 				if (event.roomCode !== room.value?.code) return
 				resetRoundState()
+				const systemEvent: PresenceEvent = {
+					type: 'system',
+					user: {
+						userId: 'system',
+						username: 'system',
+						displayName: '系统',
+					},
+					message: event.message,
+					at: event.at,
+				}
+				presenceEvents.value = [systemEvent, ...presenceEvents.value].slice(
+					0,
+					5,
+				)
+				ElMessage.success(event.message)
+			},
+		)
+		socket.on(
+			'room-host-transferred',
+			(event: { roomCode: string; message: string; at: string }) => {
+				if (event.roomCode !== room.value?.code) return
 				const systemEvent: PresenceEvent = {
 					type: 'system',
 					user: {
@@ -701,7 +732,41 @@ function openMemberImportant(member: MemberStats) {
 	memberDialogOpen.value = true
 }
 
+function canTransferHostTo(member: MemberStats) {
+	return Boolean(
+		canHost.value &&
+		user.value &&
+		room.value &&
+		member.online &&
+		member.userId !== user.value.id,
+	)
+}
+
+async function transferHost(member: MemberStats) {
+	if (!room.value || !canTransferHostTo(member)) return
+	const confirmed = window.confirm(
+		`确定将主持人权限交给 ${member.displayName} 吗？交接后你会变为普通用户。`,
+	)
+	if (!confirmed) return
+	const data = await request<RoomState>(
+		`/rooms/${room.value.code}/transfer-host`,
+		{
+			method: 'POST',
+			body: JSON.stringify({ userId: member.userId }),
+		},
+	)
+	room.value = data
+	selectedRole.value = canHost.value ? 'host' : 'player'
+	if (activePanel.value === 'answer') {
+		toolDockOpen.value = false
+		activePanel.value = 'canvas'
+	}
+	ElMessage.success(`已将主持人交给 ${member.displayName}`)
+}
+
 function openToolDock(panel: 'answer' | 'canvas') {
+	if (panel === 'answer' && !canHost.value)
+		return ElMessage.warning('只有主持人可以查看汤底')
 	activePanel.value = panel
 	toolDockOpen.value = true
 	if (panel === 'canvas') {
@@ -1316,12 +1381,14 @@ function formatTime(time: string) {
 							:image-size="58"
 						/>
 						<div v-else class="member-list">
-							<button
+							<div
 								v-for="member in memberStats"
 								:key="member.userId"
 								:class="['member-row', { offline: !member.online }]"
-								type="button"
+								role="button"
+								tabindex="0"
 								@click="openMemberImportant(member)"
+								@keyup.enter="openMemberImportant(member)"
 							>
 								<el-avatar :size="34" :src="member.avatarDataUrl">{{
 									member.displayName.slice(0, 1)
@@ -1338,8 +1405,15 @@ function formatTime(time: string) {
 									><b>{{ member.questionCount }}</b
 									>问 <b class="important-number">{{ member.importantCount }}</b
 									>重要</span
+								><el-button
+									v-if="canTransferHostTo(member)"
+									size="small"
+									type="primary"
+									plain
+									@click.stop="transferHost(member)"
+									>设为主持人</el-button
 								>
-							</button>
+							</div>
 						</div>
 						<div v-if="presenceEvents.length" class="presence-feed">
 							<div
@@ -1382,7 +1456,7 @@ function formatTime(time: string) {
 			</section>
 
 			<div class="floating-tools">
-				<el-tooltip content="汤底" placement="left">
+				<el-tooltip v-if="canHost" content="汤底" placement="left">
 					<button
 						:class="[
 							'float-tool',
@@ -1429,7 +1503,11 @@ function formatTime(time: string) {
 					<el-button text @click="toolDockOpen = false">收起</el-button>
 				</div>
 
-				<div v-show="activePanel === 'answer'" class="tool-panel">
+				<div
+					v-if="canHost"
+					v-show="activePanel === 'answer'"
+					class="tool-panel"
+				>
 					<div class="answer-tools">
 						<el-switch
 							v-model="answerHidden"
