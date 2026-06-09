@@ -11,7 +11,6 @@ import {
 	House,
 	Moon,
 	Plus,
-	Refresh,
 	Right,
 	Share,
 	Sunny,
@@ -126,7 +125,8 @@ interface Settlement {
 	entries: SettlementEntry[]
 }
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://121.196.219.107:3001'
+const API_BASE =
+	import.meta.env.VITE_API_BASE_URL || 'http://121.196.219.107:3001'
 const STORAGE_TOKEN = 'turtle-soup:token'
 const STORAGE_THEME = 'turtle-soup:theme'
 
@@ -184,6 +184,7 @@ const selectedQuestionId = ref('')
 const shareUrl = ref(window.location.href)
 const answerHidden = ref(true)
 const activePanel = ref('answer')
+const toolDockOpen = ref(false)
 const brushColor = ref('#14b8a6')
 const brushSize = ref(6)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -246,7 +247,8 @@ const memberStats = computed<MemberStats[]>(() => {
 		})
 	}
 	roomMembers.value.forEach(member => upsertMember(member, true))
-	if (room.value) upsertMember(room.value.host, onlineIds.has(room.value.host.id))
+	if (room.value)
+		upsertMember(room.value.host, onlineIds.has(room.value.host.id))
 	sortedQuestions.value.forEach(question => {
 		upsertMember(question.author, onlineIds.has(question.author.id))
 		const existing =
@@ -273,7 +275,10 @@ const memberStats = computed<MemberStats[]>(() => {
 		}
 		byId.set(question.author.id, existing)
 	})
-	return [...byId.values()].sort((a, b) => Number(b.online) - Number(a.online) || b.questionCount - a.questionCount)
+	return [...byId.values()].sort(
+		(a, b) =>
+			Number(b.online) - Number(a.online) || b.questionCount - a.questionCount,
+	)
 })
 const selectedSoup = computed(() =>
 	soups.value.find(soup => soup.id === selectedSoupId.value),
@@ -637,6 +642,17 @@ function openMemberImportant(member: MemberStats) {
 	memberDialogOpen.value = true
 }
 
+function openToolDock(panel: 'answer' | 'canvas') {
+	activePanel.value = panel
+	toolDockOpen.value = true
+	if (panel === 'canvas') {
+		nextTick(() => {
+			resizeCanvas()
+			restoreCanvas()
+		})
+	}
+}
+
 async function revealAnswer() {
 	if (!canHost.value || !room.value) return
 	settlement.value = await request<Settlement>(
@@ -692,13 +708,6 @@ async function removeQuestion(questionId: string) {
 			method: 'DELETE',
 		},
 	)
-}
-
-async function resetRoom() {
-	if (!room.value) return
-	clearCanvas(false)
-	await saveRoom()
-	ElMessage.success('画板已清空；问题可逐条删除')
 }
 
 function getCanvasPoint(event: PointerEvent) {
@@ -826,59 +835,708 @@ function formatTime(time: string) {
 					<h1>海龟汤在线联机</h1>
 				</div>
 				<div class="header-actions">
-					<el-button :icon="Share" :disabled="!room" @click="copyShareUrl">邀请</el-button>
-					<el-button :icon="isDark ? Sunny : Moon" circle @click="isDark = !isDark" />
+					<el-button :icon="Share" :disabled="!room" @click="copyShareUrl"
+						>邀请</el-button
+					>
+					<el-button
+						:icon="isDark ? Sunny : Moon"
+						circle
+						@click="isDark = !isDark"
+					/>
 				</div>
 			</header>
 
 			<section class="user-strip surface-card">
 				<div v-if="user" class="current-user">
-					<el-upload :show-file-list="false" :before-upload="beforeAvatarUpload" accept="image/*">
-						<el-avatar :size="46" :src="user.avatarDataUrl">{{ user.displayName.slice(0, 1) }}</el-avatar>
+					<el-upload
+						:show-file-list="false"
+						:before-upload="beforeAvatarUpload"
+						accept="image/*"
+					>
+						<el-avatar :size="46" :src="user.avatarDataUrl">{{
+							user.displayName.slice(0, 1)
+						}}</el-avatar>
 					</el-upload>
-					<div class="user-copy"><strong>{{ user.displayName }}</strong><span>@{{ user.username }} · {{ user.rankTitle }} · {{ user.points }} 分</span></div>
+					<div class="user-copy">
+						<strong>{{ user.displayName }}</strong
+						><span
+							>@{{ user.username }} · {{ user.rankTitle }} ·
+							{{ user.points }} 分</span
+						>
+					</div>
 					<el-button text type="danger" @click="logout()">退出</el-button>
 				</div>
 				<el-form v-else class="auth-inline" inline @submit.prevent>
-					<el-segmented v-model="authMode" :options="[{ label: '登录', value: 'login' }, { label: '注册', value: 'register' }]" />
-					<el-input v-model="authForm.username" placeholder="用户名" maxlength="24" />
-					<el-input v-if="authMode === 'register'" v-model="authForm.displayName" placeholder="昵称" maxlength="24" />
-					<el-input v-model="authForm.password" type="password" placeholder="密码" maxlength="40" show-password />
-					<el-button type="primary" :icon="Check" @click="submitAuth">{{ authMode === 'register' ? '注册' : '登录' }}</el-button>
+					<el-segmented
+						v-model="authMode"
+						:options="[
+							{ label: '登录', value: 'login' },
+							{ label: '注册', value: 'register' },
+						]"
+					/>
+					<el-input
+						v-if="authMode === 'register'"
+						v-model="authForm.displayName"
+						placeholder="昵称"
+						maxlength="24"
+					/>
+					<el-input
+						v-model="authForm.username"
+						placeholder="用户名"
+						maxlength="24"
+					/>
+					<el-input
+						v-model="authForm.password"
+						type="password"
+						placeholder="密码"
+						maxlength="40"
+						show-password
+					/>
+					<el-button type="primary" :icon="Check" @click="submitAuth">{{
+						authMode === 'register' ? '注册' : '登录'
+					}}</el-button>
 				</el-form>
-				<div class="room-metrics"><div><b>{{ room?.questions.length ?? 0 }}</b><span>提问</span></div><div><b>{{ pendingQuestions }}</b><span>待判定</span></div><div><b>{{ answeredQuestions }}</b><span>已回答</span></div><div><b>{{ memberStats.filter(member => member.online).length }}</b><span>在线</span></div></div>
+				<div class="room-metrics">
+					<div>
+						<b>{{ room?.questions.length ?? 0 }}</b
+						><span>提问</span>
+					</div>
+					<div>
+						<b>{{ pendingQuestions }}</b
+						><span>待判定</span>
+					</div>
+					<div>
+						<b>{{ answeredQuestions }}</b
+						><span>已回答</span>
+					</div>
+					<div>
+						<b>{{ memberStats.filter(member => member.online).length }}</b
+						><span>在线</span>
+					</div>
+				</div>
 				<div class="member-strip">
-					<button v-for="member in memberStats.slice(0, 8)" :key="member.userId" :class="['strip-member', { offline: !member.online }]" type="button" @click="openMemberImportant(member)"><el-avatar :size="30" :src="member.avatarDataUrl">{{ member.displayName.slice(0, 1) }}</el-avatar><span>{{ member.displayName }}</span></button>
+					<button
+						v-for="member in memberStats.slice(0, 8)"
+						:key="member.userId"
+						:class="['strip-member', { offline: !member.online }]"
+						type="button"
+						@click="openMemberImportant(member)"
+					>
+						<el-avatar :size="30" :src="member.avatarDataUrl">{{
+							member.displayName.slice(0, 1)
+						}}</el-avatar
+						><span>{{ member.displayName }}</span>
+					</button>
 				</div>
 			</section>
 
 			<section class="desk-grid">
 				<aside class="story-column">
 					<section class="surface-card story-card">
-						<div class="section-head"><div><p class="eyebrow">汤面</p><el-input v-if="canHost && room" v-model="room.title" class="title-input" @input="queueRoomSave" /><h2 v-else>{{ room?.title ?? '请选择汤面并创建或加入房间' }}</h2></div><el-tag :type="canHost ? 'success' : 'info'" effect="dark">{{ canHost ? '主持人' : '玩家' }}</el-tag></div>
-						<el-input v-if="canHost && room" v-model="room.surface" type="textarea" :autosize="{ minRows: 7, maxRows: 12 }" placeholder="写下可公开给玩家的汤面" @input="queueRoomSave" />
-						<p v-else class="surface-text">{{ room?.surface ?? '还没有进入房间。登录后可创建房间，或用房间号加入。' }}</p>
+						<div class="section-head">
+							<div>
+								<p class="eyebrow">汤面</p>
+								<el-input
+									v-if="canHost && room"
+									v-model="room.title"
+									class="title-input"
+									@input="queueRoomSave"
+								/>
+								<h2 v-else>
+									{{ room?.title ?? '请选择汤面并创建或加入房间' }}
+								</h2>
+							</div>
+							<el-tag :type="canHost ? 'success' : 'info'" effect="dark">{{
+								canHost ? '主持人' : '玩家'
+							}}</el-tag>
+						</div>
+						<el-input
+							v-if="canHost && room"
+							v-model="room.surface"
+							type="textarea"
+							:autosize="{ minRows: 7, maxRows: 12 }"
+							placeholder="写下可公开给玩家的汤面"
+							@input="queueRoomSave"
+						/>
+						<p v-else class="surface-text">
+							{{
+								room?.surface ??
+								'还没有进入房间。登录后可创建房间，或用房间号加入。'
+							}}
+						</p>
 					</section>
-					<section class="surface-card clue-card"><div class="section-head compact"><div class="title-with-icon"><Flag /><strong>重要线索</strong></div><el-tag round effect="dark" type="warning">{{ importantQuestions.length }}</el-tag></div><el-empty v-if="!importantQuestions.length" description="主持人还没有标记重要内容" /><div v-else class="clue-list"><article v-for="question in importantQuestions" :key="question.id" class="clue-item"><div class="question-meta"><span>{{ question.author.displayName }}</span><time>{{ formatTime(question.createdAt) }}</time></div><p>{{ question.text }}</p><el-tag v-if="question.verdict" :type="verdictTypes[question.verdict]" effect="plain" round>{{ verdictLabels[question.verdict] }}</el-tag></article></div></section>
+					<section class="surface-card clue-card">
+						<div class="section-head compact">
+							<div class="title-with-icon">
+								<Flag /><strong>重要线索</strong>
+							</div>
+							<el-tag round effect="dark" type="warning">{{
+								importantQuestions.length
+							}}</el-tag>
+						</div>
+						<el-empty
+							v-if="!importantQuestions.length"
+							description="主持人还没有标记重要内容"
+						/>
+						<div v-else class="clue-list">
+							<article
+								v-for="question in importantQuestions"
+								:key="question.id"
+								class="clue-item"
+							>
+								<div class="question-meta">
+									<span>{{ question.author.displayName }}</span
+									><time>{{ formatTime(question.createdAt) }}</time>
+								</div>
+								<p>{{ question.text }}</p>
+								<el-tag
+									v-if="question.verdict"
+									:type="verdictTypes[question.verdict]"
+									effect="plain"
+									round
+									>{{ verdictLabels[question.verdict] }}</el-tag
+								>
+							</article>
+						</div>
+					</section>
 				</aside>
 
 				<section class="surface-card qa-column">
-					<div class="section-head"><div class="title-with-icon"><EditPen /><strong>实时问答</strong></div><span class="subtle">{{ onlineHint }}</span></div>
-					<div class="ask-row"><el-input v-model="questionText" size="large" placeholder="输入问题，例如：这个人认识厨师吗？" :disabled="!user || !room" @keyup.enter="addQuestion" /><el-button type="primary" size="large" :icon="Right" :disabled="!user || !room" @click="addQuestion">发送</el-button></div>
-					<div class="timeline"><el-empty v-if="!sortedQuestions.length" description="还没有问题，开汤吧。" /><article v-for="question in sortedQuestions" :key="question.id" :class="['question-item', { selected: selectedQuestionId === question.id }]" @click="selectedQuestionId = selectedQuestionId === question.id ? '' : question.id"><div class="question-main"><div class="question-meta"><span>{{ question.author.displayName }}</span><time>{{ formatTime(question.createdAt) }}</time></div><p>{{ question.text }}</p></div><div class="verdict-zone"><div class="tag-line"><el-tag v-if="question.important" type="warning" effect="dark" round>重要</el-tag><el-tag v-if="question.verdict" :type="verdictTypes[question.verdict]" effect="dark" round>{{ verdictLabels[question.verdict] }}</el-tag><span v-if="!question.verdict" class="waiting">等待主持人</span></div><el-button v-if="canHost" size="small" text>{{ selectedQuestionId === question.id ? '收起操作' : '主持操作' }}</el-button></div><div v-if="canHost && selectedQuestionId === question.id" class="host-action-panel" @click.stop><div class="action-group"><span>判定</span><button class="judge yes" type="button" @click="setVerdict(question.id, 'yes')">是</button><button class="judge no" type="button" @click="setVerdict(question.id, 'no')">不是</button><button class="judge both" type="button" @click="setVerdict(question.id, 'both')">是也不是</button><button class="judge mute" type="button" @click="setVerdict(question.id, 'irrelevant')">不重要</button></div><div class="action-group"><span>标记</span><button :class="['judge', 'flag', { active: question.important }]" type="button" @click="toggleImportant(question)">{{ question.important ? '已标重要' : '标为重要' }}</button><button class="judge delete" type="button" @click="removeQuestion(question.id)">删除</button></div><div class="score-grid"><label>问题价值<el-select :model-value="question.quality" size="small" @change="(value: QuestionQuality) => updateQuestionScoring(question, { quality: value })"><el-option v-for="(label, value) in qualityLabels" :key="value" :label="label" :value="value" /></el-select></label><label>猜中程度<el-select :model-value="question.truthGuess" size="small" @change="(value: TruthGuess) => updateQuestionScoring(question, { truthGuess: value })"><el-option v-for="(label, value) in truthGuessLabels" :key="value" :label="label" :value="value" /></el-select></label></div><div class="achievement-row"><el-checkbox :model-value="question.firstCoreClue" @change="(value: boolean) => updateQuestionScoring(question, { firstCoreClue: value })">首次核心线索</el-checkbox><el-checkbox :model-value="question.firstMainLogic" @change="(value: boolean) => updateQuestionScoring(question, { firstMainLogic: value })">首次主要逻辑</el-checkbox><el-checkbox :model-value="question.firstFullSolve" @change="(value: boolean) => updateQuestionScoring(question, { firstFullSolve: value })">首位完整破解</el-checkbox></div></div></article></div>
+					<div class="section-head">
+						<div class="title-with-icon">
+							<EditPen /><strong>实时问答</strong>
+						</div>
+						<span class="subtle">{{ onlineHint }}</span>
+					</div>
+					<div class="ask-row">
+						<el-input
+							v-model="questionText"
+							size="large"
+							placeholder="输入问题，例如：这个人认识厨师吗？"
+							:disabled="!user || !room"
+							@keyup.enter="addQuestion"
+						/><el-button
+							type="primary"
+							size="large"
+							:icon="Right"
+							:disabled="!user || !room"
+							@click="addQuestion"
+							>发送</el-button
+						>
+					</div>
+					<div class="timeline">
+						<el-empty
+							v-if="!sortedQuestions.length"
+							description="还没有问题，开汤吧。"
+						/>
+						<article
+							v-for="question in sortedQuestions"
+							:key="question.id"
+							:class="[
+								'question-item',
+								{ selected: selectedQuestionId === question.id },
+							]"
+							@click="
+								selectedQuestionId =
+									selectedQuestionId === question.id ? '' : question.id
+							"
+						>
+							<div class="question-main">
+								<div class="question-meta">
+									<span>{{ question.author.displayName }}</span
+									><time>{{ formatTime(question.createdAt) }}</time>
+								</div>
+								<p>{{ question.text }}</p>
+							</div>
+							<div class="verdict-zone">
+								<div class="tag-line">
+									<el-tag
+										v-if="question.important"
+										type="warning"
+										effect="dark"
+										round
+										>重要</el-tag
+									><el-tag
+										v-if="question.verdict"
+										:type="verdictTypes[question.verdict]"
+										effect="dark"
+										round
+										>{{ verdictLabels[question.verdict] }}</el-tag
+									><span v-if="!question.verdict" class="waiting"
+										>等待主持人</span
+									>
+								</div>
+								<el-button v-if="canHost" size="small" text>{{
+									selectedQuestionId === question.id ? '收起操作' : '主持操作'
+								}}</el-button>
+							</div>
+							<div
+								v-if="canHost && selectedQuestionId === question.id"
+								class="host-action-panel"
+								@click.stop
+							>
+								<div class="action-group">
+									<span>判定</span
+									><button
+										class="judge yes"
+										type="button"
+										@click="setVerdict(question.id, 'yes')"
+									>
+										是</button
+									><button
+										class="judge no"
+										type="button"
+										@click="setVerdict(question.id, 'no')"
+									>
+										不是</button
+									><button
+										class="judge both"
+										type="button"
+										@click="setVerdict(question.id, 'both')"
+									>
+										是也不是</button
+									><button
+										class="judge mute"
+										type="button"
+										@click="setVerdict(question.id, 'irrelevant')"
+									>
+										不重要
+									</button>
+								</div>
+								<div class="action-group">
+									<span>标记</span
+									><button
+										:class="['judge', 'flag', { active: question.important }]"
+										type="button"
+										@click="toggleImportant(question)"
+									>
+										{{ question.important ? '已标重要' : '标为重要' }}</button
+									><button
+										class="judge delete"
+										type="button"
+										@click="removeQuestion(question.id)"
+									>
+										删除
+									</button>
+								</div>
+								<div class="score-grid">
+									<label
+										>问题价值<el-select
+											:model-value="question.quality"
+											size="small"
+											@change="
+												(value: QuestionQuality) =>
+													updateQuestionScoring(question, { quality: value })
+											"
+											><el-option
+												v-for="(label, value) in qualityLabels"
+												:key="value"
+												:label="label"
+												:value="value" /></el-select></label
+									><label
+										>猜中程度<el-select
+											:model-value="question.truthGuess"
+											size="small"
+											@change="
+												(value: TruthGuess) =>
+													updateQuestionScoring(question, { truthGuess: value })
+											"
+											><el-option
+												v-for="(label, value) in truthGuessLabels"
+												:key="value"
+												:label="label"
+												:value="value" /></el-select
+									></label>
+								</div>
+								<div class="achievement-row">
+									<el-checkbox
+										:model-value="question.firstCoreClue"
+										@change="
+											(value: boolean) =>
+												updateQuestionScoring(question, {
+													firstCoreClue: value,
+												})
+										"
+										>首次核心线索</el-checkbox
+									><el-checkbox
+										:model-value="question.firstMainLogic"
+										@change="
+											(value: boolean) =>
+												updateQuestionScoring(question, {
+													firstMainLogic: value,
+												})
+										"
+										>首次主要逻辑</el-checkbox
+									><el-checkbox
+										:model-value="question.firstFullSolve"
+										@change="
+											(value: boolean) =>
+												updateQuestionScoring(question, {
+													firstFullSolve: value,
+												})
+										"
+										>首位完整破解</el-checkbox
+									>
+								</div>
+							</div>
+						</article>
+					</div>
 				</section>
 
 				<aside class="control-column">
-					<section class="surface-card config-card"><div class="section-head compact"><div class="title-with-icon"><House /><strong>房间配置</strong></div></div><div class="config-stack"><label>选择汤面</label><el-select v-model="selectedSoupId" filterable placeholder="选择汤面"><el-option v-for="soup in soups" :key="soup.id" :label="soup.title" :value="soup.id"><span>{{ soup.title }}</span><small>{{ soup.isBuiltin ? '内置' : '自建' }} · {{ difficultyLabels[soup.difficulty] }}</small></el-option></el-select><p v-if="selectedSoup" class="soup-preview">{{ selectedSoup.surface }}</p><div class="config-actions"><el-button :icon="Plus" :disabled="!user" @click="customSoupOpen = true">自建汤面</el-button><el-button type="primary" :icon="Plus" :disabled="!user" @click="createRoom">创建房间</el-button></div><label>加入房间</label><div class="room-row"><el-input v-model="roomCodeInput" placeholder="输入房间号" @keyup.enter="joinRoom()" /><el-button :icon="Right" @click="joinRoom()" /></div><el-button text :icon="CopyDocument" :disabled="!room" @click="copyShareUrl">复制邀请链接</el-button></div></section>
-					<section class="surface-card members-card"><div class="section-head compact"><div class="title-with-icon"><User /><strong>房间用户({{ memberStats.length || 0 }})</strong></div></div><el-empty v-if="!memberStats.length" description="暂无用户" :image-size="58" /><div v-else class="member-list"><button v-for="member in memberStats" :key="member.userId" :class="['member-row', { offline: !member.online }]" type="button" @click="openMemberImportant(member)"><el-avatar :size="34" :src="member.avatarDataUrl">{{ member.displayName.slice(0, 1) }}</el-avatar><span class="member-name">{{ member.displayName }}<span class="member-badges"><em v-if="room?.host.id === member.userId">主持人</em><i :class="member.online ? 'online' : 'offline'">{{ member.online ? '在线' : '离线' }}</i></span></span><span class="member-counts"><b>{{ member.questionCount }}</b>问 <b class="important-number">{{ member.importantCount }}</b>重要</span></button></div><div v-if="presenceEvents.length" class="presence-feed"><div v-for="event in presenceEvents" :key="event.at + '-' + event.user.userId" :class="['presence-line', event.type]"><span /><p>{{ event.message }}</p></div></div></section>
-					<section class="surface-card rank-card"><div class="section-head compact"><div class="title-with-icon"><Flag /><strong>实时积分排行</strong></div></div><el-empty v-if="!liveLeaderboard.length" description="暂无排行" :image-size="56" /><div v-else class="mini-rank-list"><div v-for="entry in liveLeaderboard.slice(0, 6)" :key="entry.user.id" class="mini-rank-row"><strong>#{{ entry.rank }}</strong><el-avatar :size="30" :src="entry.user.avatarDataUrl">{{ entry.user.displayName.slice(0, 1) }}</el-avatar><span>{{ entry.user.displayName }}</span><b>{{ entry.total }}</b></div></div></section>
-					<section class="surface-card tools-card"><el-tabs v-model="activePanel" stretch><el-tab-pane name="answer"><template #label><span class="tab-label"><Hide />汤底</span></template><div class="answer-tools"><el-switch v-model="answerHidden" active-text="隐藏" inactive-text="显示" inline-prompt /><el-button v-if="canHost" text type="danger" :icon="Refresh" :loading="savingRoom" @click="resetRoom">清空画板</el-button></div><el-button v-if="canHost && room" type="warning" class="wide-button reveal-button" :disabled="room.revealed" @click="revealAnswer">{{ room.revealed ? '已揭秘' : '揭秘汤底并结算积分' }}</el-button><el-input v-if="canHost && room" v-model="room.answer" type="textarea" :autosize="{ minRows: 8, maxRows: 14 }" placeholder="只有主持人需要知道的汤底" @input="queueRoomSave" /><div v-else-if="answerHidden" class="hidden-answer"><CircleClose /><span>汤底已隐藏</span></div><p v-else class="answer-text">{{ room?.answer ?? '暂无汤底' }}</p></el-tab-pane><el-tab-pane name="canvas"><template #label><span class="tab-label"><Brush />画板</span></template><div class="brush-toolbar"><el-color-picker v-model="brushColor" :disabled="!canHost" /><el-slider v-model="brushSize" :min="2" :max="22" :disabled="!canHost" /><el-tooltip content="清空画板"><el-button :icon="Delete" circle :disabled="!canHost" @click="clearCanvas()" /></el-tooltip></div><div ref="canvasWrapRef" class="canvas-wrap"><canvas ref="canvasRef" :class="{ readonly: !canHost }" @pointerdown="startDrawing" @pointermove="draw" @pointerup="stopDrawing" @pointercancel="stopDrawing" @pointerleave="stopDrawing" /></div></el-tab-pane></el-tabs></section>
+					<section class="surface-card config-card">
+						<div class="section-head compact">
+							<div class="title-with-icon">
+								<House /><strong>房间配置</strong>
+							</div>
+						</div>
+						<div class="config-stack">
+							<label>选择汤面</label
+							><el-select
+								v-model="selectedSoupId"
+								filterable
+								placeholder="选择汤面"
+								><el-option
+									v-for="soup in soups"
+									:key="soup.id"
+									:label="soup.title"
+									:value="soup.id"
+									><span>{{ soup.title }}</span
+									><small
+										>{{ soup.isBuiltin ? '内置' : '自建' }} ·
+										{{ difficultyLabels[soup.difficulty] }}</small
+									></el-option
+								></el-select
+							>
+							<p v-if="selectedSoup" class="soup-preview">
+								{{ selectedSoup.surface }}
+							</p>
+							<div class="config-actions">
+								<el-button
+									:icon="Plus"
+									:disabled="!user"
+									@click="customSoupOpen = true"
+									>自建汤面</el-button
+								><el-button
+									type="primary"
+									:icon="Plus"
+									:disabled="!user"
+									@click="createRoom"
+									>创建房间</el-button
+								>
+							</div>
+							<label>加入房间</label>
+							<div class="room-row">
+								<el-input
+									v-model="roomCodeInput"
+									placeholder="输入房间号"
+									@keyup.enter="joinRoom()"
+								/><el-button :icon="Right" @click="joinRoom()" />
+							</div>
+							<el-button
+								text
+								:icon="CopyDocument"
+								:disabled="!room"
+								@click="copyShareUrl"
+								>复制邀请链接</el-button
+							>
+						</div>
+					</section>
+					<section class="surface-card members-card">
+						<div class="section-head compact">
+							<div class="title-with-icon">
+								<User /><strong>房间用户({{ memberStats.length || 0 }})</strong>
+							</div>
+						</div>
+						<el-empty
+							v-if="!memberStats.length"
+							description="暂无用户"
+							:image-size="58"
+						/>
+						<div v-else class="member-list">
+							<button
+								v-for="member in memberStats"
+								:key="member.userId"
+								:class="['member-row', { offline: !member.online }]"
+								type="button"
+								@click="openMemberImportant(member)"
+							>
+								<el-avatar :size="34" :src="member.avatarDataUrl">{{
+									member.displayName.slice(0, 1)
+								}}</el-avatar
+								><span class="member-name"
+									>{{ member.displayName
+									}}<span class="member-badges"
+										><em v-if="room?.host.id === member.userId">主持人</em
+										><i :class="member.online ? 'online' : 'offline'">{{
+											member.online ? '在线' : '离线'
+										}}</i></span
+									></span
+								><span class="member-counts"
+									><b>{{ member.questionCount }}</b
+									>问 <b class="important-number">{{ member.importantCount }}</b
+									>重要</span
+								>
+							</button>
+						</div>
+						<div v-if="presenceEvents.length" class="presence-feed">
+							<div
+								v-for="event in presenceEvents"
+								:key="event.at + '-' + event.user.userId"
+								:class="['presence-line', event.type]"
+							>
+								<span />
+								<p>{{ event.message }}</p>
+							</div>
+						</div>
+					</section>
+					<section class="surface-card rank-card">
+						<div class="section-head compact">
+							<div class="title-with-icon">
+								<Flag /><strong>实时积分排行</strong>
+							</div>
+						</div>
+						<el-empty
+							v-if="!liveLeaderboard.length"
+							description="暂无排行"
+							:image-size="56"
+						/>
+						<div v-else class="mini-rank-list">
+							<div
+								v-for="entry in liveLeaderboard.slice(0, 6)"
+								:key="entry.user.id"
+								class="mini-rank-row"
+							>
+								<strong>#{{ entry.rank }}</strong
+								><el-avatar :size="30" :src="entry.user.avatarDataUrl">{{
+									entry.user.displayName.slice(0, 1)
+								}}</el-avatar
+								><span>{{ entry.user.displayName }}</span
+								><b>{{ entry.total }}</b>
+							</div>
+						</div>
+					</section>
 				</aside>
 			</section>
 
-			<el-dialog v-model="customSoupOpen" title="自建汤面" width="min(720px, 92vw)"><el-form label-position="top"><el-form-item label="标题"><el-input v-model="customSoup.title" /></el-form-item><el-form-item label="汤面"><el-input v-model="customSoup.surface" type="textarea" :autosize="{ minRows: 4 }" /></el-form-item><el-form-item label="汤底"><el-input v-model="customSoup.answer" type="textarea" :autosize="{ minRows: 5 }" /></el-form-item><div class="dialog-grid"><el-form-item label="分类"><el-input v-model="customSoup.category" /></el-form-item><el-form-item label="难度"><el-select v-model="customSoup.difficulty"><el-option label="入门" value="easy" /><el-option label="标准" value="medium" /><el-option label="困难" value="hard" /></el-select></el-form-item></div></el-form><template #footer><el-button @click="customSoupOpen = false">取消</el-button><el-button type="primary" @click="createCustomSoup">保存汤面</el-button></template></el-dialog>
-			<el-dialog v-model="memberDialogOpen" :title="(selectedMember?.displayName ?? '') + ' 的重要内容'" width="min(680px, 92vw)"><el-empty v-if="!selectedMember?.importantQuestions.length" description="这个用户暂无重要内容" /><div v-else class="member-clues"><div v-for="question in selectedMember.importantQuestions" :key="question.id" class="clue-item"><div class="question-meta"><span>{{ selectedMember.displayName }}</span><time>{{ formatTime(question.createdAt) }}</time></div><p>{{ question.text }}</p><el-tag v-if="question.verdict" :type="verdictTypes[question.verdict]" effect="plain" round>{{ verdictLabels[question.verdict] }}</el-tag></div></div></el-dialog>
-			<el-dialog v-model="settlementDialogOpen" title="本局积分排行榜" width="min(820px, 94vw)"><div v-if="settlement" class="settlement-board"><div class="answer-reveal"><span>汤底</span><p>{{ settlement.answer }}</p></div><div class="rank-list"><div v-for="entry in settlement.entries" :key="entry.user.id" class="rank-row"><strong class="rank-number">#{{ entry.rank }}</strong><el-avatar :size="42" :src="entry.user.avatarDataUrl">{{ entry.user.displayName.slice(0, 1) }}</el-avatar><div class="rank-user"><b>{{ entry.user.displayName }}</b><span>{{ entry.user.rankTitle }} · 累计 {{ entry.user.points }} 分</span></div><strong class="rank-score">+{{ entry.total }}</strong><div class="rank-breakdown"><el-tag v-for="(points, label) in entry.breakdown" :key="label" effect="plain" round>{{ label }} +{{ points }}</el-tag></div></div></div></div></el-dialog>
+			<div class="floating-tools">
+				<el-tooltip content="汤底" placement="left">
+					<button
+						:class="[
+							'float-tool',
+							{ active: toolDockOpen && activePanel === 'answer' },
+						]"
+						type="button"
+						@click="openToolDock('answer')"
+					>
+						<Hide />
+					</button>
+				</el-tooltip>
+				<el-tooltip content="画板" placement="left">
+					<button
+						:class="[
+							'float-tool',
+							{ active: toolDockOpen && activePanel === 'canvas' },
+						]"
+						type="button"
+						@click="openToolDock('canvas')"
+					>
+						<Brush />
+					</button>
+				</el-tooltip>
+			</div>
+
+			<section v-if="toolDockOpen" class="tool-popover surface-card">
+				<div class="tool-popover-head">
+					<div class="tool-tabs">
+						<button
+							:class="{ active: activePanel === 'answer' }"
+							type="button"
+							@click="openToolDock('answer')"
+						>
+							<Hide /> 汤底
+						</button>
+						<button
+							:class="{ active: activePanel === 'canvas' }"
+							type="button"
+							@click="openToolDock('canvas')"
+						>
+							<Brush /> 画板
+						</button>
+					</div>
+					<el-button text @click="toolDockOpen = false">收起</el-button>
+				</div>
+
+				<div v-show="activePanel === 'answer'" class="tool-panel">
+					<div class="answer-tools">
+						<el-switch
+							v-model="answerHidden"
+							active-text="隐藏"
+							inactive-text="显示"
+							inline-prompt
+						/>
+					</div>
+					<el-button
+						v-if="canHost && room"
+						type="warning"
+						class="wide-button reveal-button"
+						:disabled="room.revealed"
+						@click="revealAnswer"
+					>
+						{{ room.revealed ? '已揭秘' : '揭秘汤底并结算积分' }}
+					</el-button>
+					<el-input
+						v-if="canHost && room"
+						v-model="room.answer"
+						type="textarea"
+						:autosize="{ minRows: 8, maxRows: 14 }"
+						placeholder="只有主持人需要知道的汤底"
+						@input="queueRoomSave"
+					/>
+					<div v-else-if="answerHidden" class="hidden-answer">
+						<CircleClose />
+						<span>汤底已隐藏</span>
+					</div>
+					<p v-else class="answer-text">{{ room?.answer ?? '暂无汤底' }}</p>
+				</div>
+
+				<div v-show="activePanel === 'canvas'" class="tool-panel">
+					<div class="brush-toolbar">
+						<el-color-picker v-model="brushColor" :disabled="!canHost" />
+						<el-slider
+							v-model="brushSize"
+							:min="2"
+							:max="22"
+							:disabled="!canHost"
+						/>
+						<el-tooltip content="清空画板">
+							<el-button
+								:icon="Delete"
+								circle
+								:disabled="!canHost"
+								@click="clearCanvas()"
+							/>
+						</el-tooltip>
+					</div>
+					<div ref="canvasWrapRef" class="canvas-wrap">
+						<canvas
+							ref="canvasRef"
+							:class="{ readonly: !canHost }"
+							@pointerdown="startDrawing"
+							@pointermove="draw"
+							@pointerup="stopDrawing"
+							@pointercancel="stopDrawing"
+							@pointerleave="stopDrawing"
+						/>
+					</div>
+				</div>
+			</section>
+
+			<el-dialog
+				v-model="customSoupOpen"
+				title="自建汤面"
+				width="min(720px, 92vw)"
+				><el-form label-position="top"
+					><el-form-item label="标题"
+						><el-input v-model="customSoup.title" /></el-form-item
+					><el-form-item label="汤面"
+						><el-input
+							v-model="customSoup.surface"
+							type="textarea"
+							:autosize="{ minRows: 4 }" /></el-form-item
+					><el-form-item label="汤底"
+						><el-input
+							v-model="customSoup.answer"
+							type="textarea"
+							:autosize="{ minRows: 5 }"
+					/></el-form-item>
+					<div class="dialog-grid">
+						<el-form-item label="分类"
+							><el-input v-model="customSoup.category" /></el-form-item
+						><el-form-item label="难度"
+							><el-select v-model="customSoup.difficulty"
+								><el-option label="入门" value="easy" /><el-option
+									label="标准"
+									value="medium" /><el-option
+									label="困难"
+									value="hard" /></el-select
+						></el-form-item></div></el-form
+				><template #footer
+					><el-button @click="customSoupOpen = false">取消</el-button
+					><el-button type="primary" @click="createCustomSoup"
+						>保存汤面</el-button
+					></template
+				></el-dialog
+			>
+			<el-dialog
+				v-model="memberDialogOpen"
+				:title="(selectedMember?.displayName ?? '') + ' 的重要内容'"
+				width="min(680px, 92vw)"
+				><el-empty
+					v-if="!selectedMember?.importantQuestions.length"
+					description="这个用户暂无重要内容"
+				/>
+				<div v-else class="member-clues">
+					<div
+						v-for="question in selectedMember.importantQuestions"
+						:key="question.id"
+						class="clue-item"
+					>
+						<div class="question-meta">
+							<span>{{ selectedMember.displayName }}</span
+							><time>{{ formatTime(question.createdAt) }}</time>
+						</div>
+						<p>{{ question.text }}</p>
+						<el-tag
+							v-if="question.verdict"
+							:type="verdictTypes[question.verdict]"
+							effect="plain"
+							round
+							>{{ verdictLabels[question.verdict] }}</el-tag
+						>
+					</div>
+				</div></el-dialog
+			>
+			<el-dialog
+				v-model="settlementDialogOpen"
+				title="本局积分排行榜"
+				width="min(820px, 94vw)"
+				><div v-if="settlement" class="settlement-board">
+					<div class="answer-reveal">
+						<span>汤底</span>
+						<p>{{ settlement.answer }}</p>
+					</div>
+					<div class="rank-list">
+						<div
+							v-for="entry in settlement.entries"
+							:key="entry.user.id"
+							class="rank-row"
+						>
+							<strong class="rank-number">#{{ entry.rank }}</strong
+							><el-avatar :size="42" :src="entry.user.avatarDataUrl">{{
+								entry.user.displayName.slice(0, 1)
+							}}</el-avatar>
+							<div class="rank-user">
+								<b>{{ entry.user.displayName }}</b
+								><span
+									>{{ entry.user.rankTitle }} · 累计
+									{{ entry.user.points }} 分</span
+								>
+							</div>
+							<strong class="rank-score">+{{ entry.total }}</strong>
+							<div class="rank-breakdown">
+								<el-tag
+									v-for="(points, label) in entry.breakdown"
+									:key="label"
+									effect="plain"
+									round
+									>{{ label }} +{{ points }}</el-tag
+								>
+							</div>
+						</div>
+					</div>
+				</div></el-dialog
+			>
 		</main>
 	</el-config-provider>
 </template>
