@@ -487,6 +487,18 @@ textarea {
   line-height: 1.55;
 }
 
+.switch-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, #f59e0b 42%, var(--line));
+  border-radius: 12px;
+  background: color-mix(in srgb, #f59e0b 12%, var(--surface));
+  color: color-mix(in srgb, #92400e 82%, var(--text));
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
 .config-stack label {
   font-weight: 900;
 }

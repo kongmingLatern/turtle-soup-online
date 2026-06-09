@@ -105,7 +105,7 @@ interface MemberStats extends RoomMember {
 }
 
 interface PresenceEvent {
-	type: 'join' | 'leave'
+	type: 'join' | 'leave' | 'system'
 	user: RoomMember
 	message: string
 	at: string
@@ -125,8 +125,7 @@ interface Settlement {
 	entries: SettlementEntry[]
 }
 
-const API_BASE =
-	import.meta.env.VITE_API_BASE_URL || 'http://121.196.219.107:3001'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
 const STORAGE_TOKEN = 'turtle-soup:token'
 const STORAGE_THEME = 'turtle-soup:theme'
 
@@ -442,6 +441,26 @@ async function createRoom() {
 	ElMessage.success(`房间 ${data.code} 已创建`)
 }
 
+async function switchRoomSoup() {
+	if (!room.value) return createRoom()
+	if (!canHost.value) return ElMessage.warning('只有主持人可以切换题目')
+	if (!selectedSoupId.value) return ElMessage.warning('请先选择汤面')
+	const confirmed = window.confirm(
+		'切换海龟汤会清空当前房间的问答、重要线索、画板和结算记录，确定切换吗？',
+	)
+	if (!confirmed) return
+	const data = await request<RoomState>(
+		`/rooms/${room.value.code}/switch-soup`,
+		{
+			method: 'POST',
+			body: JSON.stringify({ soupId: selectedSoupId.value }),
+		},
+	)
+	applyRoom(data)
+	resetRoundState(data)
+	ElMessage.success('已切换海龟汤，本局记录已清空')
+}
+
 async function joinRoom(code = roomCodeInput.value, showMessage = true) {
 	const normalized = code.trim().toUpperCase()
 	if (!normalized) return
@@ -458,12 +477,29 @@ async function joinRoom(code = roomCodeInput.value, showMessage = true) {
 function applyRoom(data: RoomState) {
 	room.value = data
 	roomCodeInput.value = data.code
+	syncSelectedSoupFromRoom(data)
 	updateShareUrl()
 	connectSocket(data.code)
 	nextTick(() => {
 		resizeCanvas()
 		restoreCanvas()
 	})
+}
+
+function syncSelectedSoupFromRoom(data: RoomState) {
+	const matched = soups.value.find(
+		soup => soup.title === data.title && soup.surface === data.surface,
+	)
+	if (matched) selectedSoupId.value = matched.id
+}
+
+function resetRoundState(nextRoom?: RoomState) {
+	if (nextRoom) room.value = nextRoom
+	settlement.value = null
+	settlementDialogOpen.value = false
+	selectedQuestionId.value = ''
+	answerHidden.value = true
+	nextTick(() => restoreCanvas(''))
 }
 
 function connectSocket(code: string) {
@@ -480,9 +516,32 @@ function connectSocket(code: string) {
 		socket.on('room-updated', (nextRoom: RoomState) => {
 			if (nextRoom.code !== room.value?.code) return
 			room.value = nextRoom
+			syncSelectedSoupFromRoom(nextRoom)
 			if (nextRoom.settlement) settlement.value = nextRoom.settlement
 			nextTick(() => restoreCanvas())
 		})
+		socket.on(
+			'room-reset',
+			(event: { roomCode: string; message: string; at: string }) => {
+				if (event.roomCode !== room.value?.code) return
+				resetRoundState()
+				const systemEvent: PresenceEvent = {
+					type: 'system',
+					user: {
+						userId: 'system',
+						username: 'system',
+						displayName: '系统',
+					},
+					message: event.message,
+					at: event.at,
+				}
+				presenceEvents.value = [systemEvent, ...presenceEvents.value].slice(
+					0,
+					5,
+				)
+				ElMessage.success(event.message)
+			},
+		)
 		socket.on('room-revealed', (nextSettlement: Settlement) => {
 			settlement.value = nextSettlement
 			settlementDialogOpen.value = true
@@ -1211,6 +1270,9 @@ function formatTime(time: string) {
 							<p v-if="selectedSoup" class="soup-preview">
 								{{ selectedSoup.surface }}
 							</p>
+							<p v-if="room && canHost" class="switch-warning">
+								切换后会清空当前房间的问答、重要线索、画板和结算记录。
+							</p>
 							<div class="config-actions">
 								<el-button
 									:icon="Plus"
@@ -1220,9 +1282,9 @@ function formatTime(time: string) {
 								><el-button
 									type="primary"
 									:icon="Plus"
-									:disabled="!user"
-									@click="createRoom"
-									>创建房间</el-button
+									:disabled="!user || Boolean(room && !canHost)"
+									@click="room ? switchRoomSoup() : createRoom()"
+									>{{ room ? '切换当前题目' : '创建房间' }}</el-button
 								>
 							</div>
 							<label>加入房间</label>
