@@ -441,7 +441,7 @@ const liveLeaderboard = computed(() => {
 })
 const onlineHint = computed(() =>
 	room.value
-		? `后端实时房间 ${room.value.code}，Socket 状态：${socketStatus.value}`
+		? `当前状态：${socketStatus.value}`
 		: '登录后可创建房间或输入房间号加入。',
 )
 const activeBackgroundImage = computed(
