@@ -17,6 +17,7 @@ import {
 	User,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
+import type { FormInstance, FormRules } from 'element-plus'
 import {
 	computed,
 	nextTick,
@@ -168,6 +169,8 @@ const isDark = ref(loadTheme())
 const token = ref(localStorage.getItem(STORAGE_TOKEN) || '')
 const user = ref<AuthUser | null>(null)
 const authMode = ref<'login' | 'register'>('login')
+const authFormRef = ref<FormInstance>()
+const customSoupFormRef = ref<FormInstance>()
 const authForm = reactive({
 	username: '',
 	password: '',
@@ -190,6 +193,10 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const canvasWrapRef = ref<HTMLElement | null>(null)
 const isDrawing = ref(false)
 const lastPoint = ref<{ x: number; y: number } | null>(null)
+const authSubmitting = ref(false)
+const creatingSoup = ref(false)
+const sendingQuestion = ref(false)
+const deletingSoupId = ref('')
 const savingRoom = ref(false)
 const socketStatus = ref('未连接')
 const roomMembers = ref<RoomMember[]>([])
@@ -199,6 +206,9 @@ const selectedMember = ref<MemberStats | null>(null)
 const settlementDialogOpen = ref(false)
 const settlement = ref<Settlement | null>(null)
 const customSoupOpen = ref(false)
+const soupManagerOpen = ref(false)
+const editingSoupId = ref('')
+const isMobile = ref(false)
 const customSoup = reactive({
 	title: '',
 	surface: '',
@@ -206,6 +216,52 @@ const customSoup = reactive({
 	category: '自建',
 	difficulty: 'medium' as Difficulty,
 })
+const authRules = computed<FormRules<typeof authForm>>(() => ({
+	displayName:
+		authMode.value === 'register'
+			? [
+					{ required: true, message: '请输入昵称', trigger: 'blur' },
+					{
+						min: 1,
+						max: 24,
+						message: '昵称长度为 1-24 个字符',
+						trigger: 'blur',
+					},
+				]
+			: [],
+	username: [
+		{ required: true, message: '请输入用户名', trigger: 'blur' },
+		{ min: 3, max: 24, message: '用户名长度为 3-24 个字符', trigger: 'blur' },
+		{
+			pattern: /^[a-zA-Z0-9_\u4e00-\u9fa5]+$/,
+			message: '用户名只能包含中文、字母、数字或下划线',
+			trigger: 'blur',
+		},
+	],
+	password: [
+		{ required: true, message: '请输入密码', trigger: 'blur' },
+		{ min: 4, max: 40, message: '密码长度为 4-40 个字符', trigger: 'blur' },
+	],
+}))
+const customSoupRules: FormRules<typeof customSoup> = {
+	title: [
+		{ required: true, message: '请输入标题', trigger: 'blur' },
+		{ min: 2, max: 60, message: '标题长度为 2-60 个字符', trigger: 'blur' },
+	],
+	surface: [
+		{ required: true, message: '请输入汤面', trigger: 'blur' },
+		{ min: 8, max: 2000, message: '汤面长度为 8-2000 个字符', trigger: 'blur' },
+	],
+	answer: [
+		{ required: true, message: '请输入汤底', trigger: 'blur' },
+		{ min: 8, max: 4000, message: '汤底长度为 8-4000 个字符', trigger: 'blur' },
+	],
+	category: [
+		{ required: true, message: '请输入分类', trigger: 'blur' },
+		{ min: 1, max: 20, message: '分类长度为 1-20 个字符', trigger: 'blur' },
+	],
+	difficulty: [{ required: true, message: '请选择难度', trigger: 'change' }],
+}
 let socket: Socket | null = null
 let canvasSaveTimer: number | undefined
 let canvasPreviewTimer: number | undefined
@@ -279,9 +335,6 @@ const memberStats = computed<MemberStats[]>(() => {
 			Number(b.online) - Number(a.online) || b.questionCount - a.questionCount,
 	)
 })
-const selectedSoup = computed(() =>
-	soups.value.find(soup => soup.id === selectedSoupId.value),
-)
 const liveLeaderboard = computed(() => {
 	if (settlement.value?.entries.length) return settlement.value.entries
 	return memberStats.value
@@ -312,6 +365,10 @@ const onlineHint = computed(() =>
 		? `后端实时房间 ${room.value.code}，Socket 状态：${socketStatus.value}`
 		: '登录后可创建房间或输入房间号加入。',
 )
+// const selectedSoupSummary = computed(() =>
+// 	soups.value.find(soup => soup.id === selectedSoupId.value),
+// )
+const soupDrawerDirection = computed(() => (isMobile.value ? 'btt' : 'rtl'))
 
 watch(
 	isDark,
@@ -331,10 +388,17 @@ watch(canHost, value => {
 	}
 })
 
+watch(authMode, () => {
+	authFormRef.value?.clearValidate()
+})
+
 onMounted(async () => {
+	updateViewportState()
 	window.addEventListener('resize', resizeCanvas)
+	window.addEventListener('resize', updateViewportState)
 	window.addEventListener('beforeunload', handleBeforeUnload)
-	await Promise.all([loadSoups(), restoreSession()])
+	await restoreSession()
+	if (user.value) await loadSoups()
 	if (roomCodeInput.value) {
 		await joinRoom(roomCodeInput.value, false)
 	}
@@ -345,6 +409,7 @@ onBeforeUnmount(() => {
 	window.clearTimeout(canvasPreviewTimer)
 	window.clearTimeout(roomSaveTimer)
 	window.removeEventListener('resize', resizeCanvas)
+	window.removeEventListener('resize', updateViewportState)
 	window.removeEventListener('beforeunload', handleBeforeUnload)
 	leaveCurrentRoom()
 	socket?.disconnect()
@@ -359,6 +424,10 @@ function loadTheme() {
 function getInitialRoomCode() {
 	const url = new URL(window.location.href)
 	return url.searchParams.get('room') || ''
+}
+
+function updateViewportState() {
+	isMobile.value = window.matchMedia('(max-width: 760px)').matches
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -385,6 +454,9 @@ async function restoreSession() {
 }
 
 async function submitAuth() {
+	if (!authFormRef.value) return
+	const valid = await authFormRef.value.validate().catch(() => false)
+	if (!valid) return
 	const payload =
 		authMode.value === 'register'
 			? {
@@ -393,23 +465,33 @@ async function submitAuth() {
 					displayName: authForm.displayName || authForm.username,
 				}
 			: { username: authForm.username, password: authForm.password }
-	const data = await request<AuthResponse>(`/auth/${authMode.value}`, {
-		method: 'POST',
-		body: JSON.stringify(payload),
-	})
-	token.value = data.token
-	user.value = data.user
-	localStorage.setItem(STORAGE_TOKEN, data.token)
-	if (room.value) {
-		joinSocketRoom(room.value.code)
+	authSubmitting.value = true
+	try {
+		const data = await request<AuthResponse>(`/auth/${authMode.value}`, {
+			method: 'POST',
+			body: JSON.stringify(payload),
+		})
+		token.value = data.token
+		user.value = data.user
+		localStorage.setItem(STORAGE_TOKEN, data.token)
+		await loadSoups()
+		if (room.value) {
+			joinSocketRoom(room.value.code)
+		}
+		ElMessage.success(authMode.value === 'register' ? '注册成功' : '登录成功')
+	} catch (error) {
+		ElMessage.error(error instanceof Error ? error.message : '操作失败')
+	} finally {
+		authSubmitting.value = false
 	}
-	ElMessage.success(authMode.value === 'register' ? '注册成功' : '登录成功')
 }
 
 function logout(showMessage = true) {
 	leaveCurrentRoom()
 	token.value = ''
 	user.value = null
+	soups.value = []
+	selectedSoupId.value = ''
 	localStorage.removeItem(STORAGE_TOKEN)
 	socket?.disconnect()
 	socket = null
@@ -417,18 +499,66 @@ function logout(showMessage = true) {
 }
 
 async function loadSoups() {
+	if (!user.value) {
+		soups.value = []
+		selectedSoupId.value = ''
+		return
+	}
 	soups.value = await request<Soup[]>('/soups')
 	selectedSoupId.value = soups.value[0]?.id ?? ''
 }
 
 async function createCustomSoup() {
-	const soup = await request<Soup>('/soups', {
-		method: 'POST',
-		body: JSON.stringify(customSoup),
+	if (!customSoupFormRef.value) return
+	const valid = await customSoupFormRef.value.validate().catch(() => false)
+	if (!valid) return
+	creatingSoup.value = true
+	const isEditing = Boolean(editingSoupId.value)
+	try {
+		const soup = await request<Soup>(
+			isEditing ? `/soups/${editingSoupId.value}` : '/soups',
+			{
+				method: isEditing ? 'PATCH' : 'POST',
+				body: JSON.stringify(customSoup),
+			},
+		)
+		const index = soups.value.findIndex(item => item.id === soup.id)
+		if (index >= 0) {
+			soups.value.splice(index, 1, soup)
+		} else {
+			soups.value.unshift(soup)
+		}
+		selectedSoupId.value = soup.id
+		resetCustomSoupForm()
+		closeCustomSoupDialog()
+		ElMessage.success(isEditing ? '汤面已更新' : '自建汤面已保存')
+	} catch (error) {
+		ElMessage.error(error instanceof Error ? error.message : '保存失败')
+	} finally {
+		creatingSoup.value = false
+	}
+}
+
+function openCreateSoupDialog() {
+	editingSoupId.value = ''
+	resetCustomSoupForm()
+	customSoupOpen.value = true
+}
+
+function openEditSoupDialog(soup: Soup) {
+	editingSoupId.value = soup.id
+	Object.assign(customSoup, {
+		title: soup.title,
+		surface: soup.surface,
+		answer: soup.answer,
+		category: soup.category || '自建',
+		difficulty: soup.difficulty,
 	})
-	soups.value.unshift(soup)
-	selectedSoupId.value = soup.id
-	customSoupOpen.value = false
+	customSoupOpen.value = true
+	nextTick(() => customSoupFormRef.value?.clearValidate())
+}
+
+function resetCustomSoupForm() {
 	Object.assign(customSoup, {
 		title: '',
 		surface: '',
@@ -436,11 +566,40 @@ async function createCustomSoup() {
 		category: '自建',
 		difficulty: 'medium',
 	})
-	ElMessage.success('自建汤面已保存')
+}
+
+function closeCustomSoupDialog() {
+	customSoupOpen.value = false
+	editingSoupId.value = ''
+	customSoupFormRef.value?.clearValidate()
+}
+
+async function deleteSoup(soup: Soup) {
+	const confirmed = window.confirm(
+		`确定删除「${soup.title}」吗？已创建的房间不会受影响，但它会从你的个人题库中移除。`,
+	)
+	if (!confirmed) return
+	deletingSoupId.value = soup.id
+	try {
+		await request<{ deleted: boolean }>(`/soups/${soup.id}`, {
+			method: 'DELETE',
+		})
+		soups.value = soups.value.filter(item => item.id !== soup.id)
+		if (selectedSoupId.value === soup.id) {
+			selectedSoupId.value = soups.value[0]?.id ?? ''
+		}
+		ElMessage.success('汤面已删除')
+	} catch (error) {
+		ElMessage.error(error instanceof Error ? error.message : '删除失败')
+	} finally {
+		deletingSoupId.value = ''
+	}
 }
 
 async function createRoom() {
 	if (!user.value) return ElMessage.warning('请先登录')
+	if (!selectedSoupId.value)
+		return ElMessage.warning('请先创建并选择自己的汤面')
 	const data = await request<RoomState>('/rooms', {
 		method: 'POST',
 		body: JSON.stringify({ soupId: selectedSoupId.value || undefined }),
@@ -641,7 +800,23 @@ function updateShareUrl() {
 }
 
 async function copyShareUrl() {
-	await navigator.clipboard.writeText(shareUrl.value)
+	if (
+		navigator.clipboard &&
+		typeof navigator.clipboard.writeText === 'function'
+	) {
+		await navigator.clipboard.writeText(shareUrl.value)
+	} else {
+		// fallback for older browsers or undefined clipboard
+		const input = document.createElement('input')
+		input.value = shareUrl.value
+		document.body.appendChild(input)
+		input.select()
+		try {
+			document.execCommand('copy')
+		} finally {
+			document.body.removeChild(input)
+		}
+	}
 	ElMessage.success('房间链接已复制')
 }
 
@@ -673,13 +848,27 @@ async function saveRoom() {
 
 async function addQuestion() {
 	const text = questionText.value.trim()
-	if (!text || !room.value) return
-	const data = await request<RoomState>(`/rooms/${room.value.code}/questions`, {
-		method: 'POST',
-		body: JSON.stringify({ text }),
-	})
-	questionText.value = ''
-	room.value = data
+	if (!room.value) return ElMessage.warning('请先进入房间')
+	if (!user.value) return ElMessage.warning('请先登录')
+	if (!text) return ElMessage.warning('请输入问题')
+	if (text.length > 500) return ElMessage.warning('问题不能超过 500 个字符')
+	if (sendingQuestion.value) return
+	sendingQuestion.value = true
+	try {
+		const data = await request<RoomState>(
+			`/rooms/${room.value.code}/questions`,
+			{
+				method: 'POST',
+				body: JSON.stringify({ text }),
+			},
+		)
+		questionText.value = ''
+		room.value = data
+	} catch (error) {
+		ElMessage.error(error instanceof Error ? error.message : '发送失败')
+	} finally {
+		sendingQuestion.value = false
+	}
 }
 
 async function setVerdict(questionId: string, verdict: Verdict) {
@@ -990,7 +1179,15 @@ function formatTime(time: string) {
 					</div>
 					<el-button text type="danger" @click="logout()">退出</el-button>
 				</div>
-				<el-form v-else class="auth-inline" inline @submit.prevent>
+				<el-form
+					v-else
+					ref="authFormRef"
+					:model="authForm"
+					:rules="authRules"
+					class="auth-inline"
+					inline
+					@submit.prevent
+				>
 					<el-segmented
 						v-model="authMode"
 						:options="[
@@ -998,27 +1195,34 @@ function formatTime(time: string) {
 							{ label: '注册', value: 'register' },
 						]"
 					/>
-					<el-input
-						v-if="authMode === 'register'"
-						v-model="authForm.displayName"
-						placeholder="昵称"
-						maxlength="24"
-					/>
-					<el-input
-						v-model="authForm.username"
-						placeholder="用户名"
-						maxlength="24"
-					/>
-					<el-input
-						v-model="authForm.password"
-						type="password"
-						placeholder="密码"
-						maxlength="40"
-						show-password
-					/>
-					<el-button type="primary" :icon="Check" @click="submitAuth">{{
-						authMode === 'register' ? '注册' : '登录'
-					}}</el-button>
+					<el-form-item v-if="authMode === 'register'" prop="displayName"
+						><el-input
+							v-model="authForm.displayName"
+							placeholder="昵称"
+							maxlength="24"
+					/></el-form-item>
+					<el-form-item prop="username"
+						><el-input
+							v-model="authForm.username"
+							placeholder="用户名"
+							maxlength="24"
+					/></el-form-item>
+					<el-form-item prop="password"
+						><el-input
+							v-model="authForm.password"
+							type="password"
+							placeholder="密码"
+							maxlength="40"
+							show-password
+							@keyup.enter="submitAuth"
+					/></el-form-item>
+					<el-button
+						type="primary"
+						:icon="Check"
+						:loading="authSubmitting"
+						@click="submitAuth"
+						>{{ authMode === 'register' ? '注册' : '登录' }}</el-button
+					>
 				</el-form>
 				<div class="room-metrics">
 					<div>
@@ -1143,6 +1347,7 @@ function formatTime(time: string) {
 							type="primary"
 							size="large"
 							:icon="Right"
+							:loading="sendingQuestion"
 							:disabled="!user || !room"
 							@click="addQuestion"
 							>发送</el-button
@@ -1319,7 +1524,8 @@ function formatTime(time: string) {
 							><el-select
 								v-model="selectedSoupId"
 								filterable
-								placeholder="选择汤面"
+								placeholder="选择自己的汤面"
+								:disabled="!user || !soups.length"
 								><el-option
 									v-for="soup in soups"
 									:key="soup.id"
@@ -1327,14 +1533,28 @@ function formatTime(time: string) {
 									:value="soup.id"
 									><span>{{ soup.title }}</span
 									><small
-										>{{ soup.isBuiltin ? '内置' : '自建' }} ·
-										{{ difficultyLabels[soup.difficulty] }}</small
+										>我的汤面 · {{ difficultyLabels[soup.difficulty] }}</small
 									></el-option
 								></el-select
 							>
-							<p v-if="selectedSoup" class="soup-preview">
-								{{ selectedSoup.surface }}
-							</p>
+							<el-empty
+								v-if="user && !soups.length"
+								description="还没有自己的汤面"
+								:image-size="54"
+							/>
+							<!-- <div v-if="selectedSoupSummary" class="soup-current">
+								<div>
+									<strong>{{ selectedSoupSummary.title }}</strong
+									><span
+										>{{ selectedSoupSummary.category || '自建' }} ·
+										{{ difficultyLabels[selectedSoupSummary.difficulty] }}</span
+									>
+								</div>
+								<p>{{ selectedSoupSummary.surface }}</p>
+								<el-button text type="primary" @click="soupManagerOpen = true"
+									>管理汤面</el-button
+								>
+							</div> -->
 							<p v-if="room && canHost" class="switch-warning">
 								切换后会清空当前房间的问答、重要线索、画板和结算记录。
 							</p>
@@ -1342,7 +1562,7 @@ function formatTime(time: string) {
 								<el-button
 									:icon="Plus"
 									:disabled="!user"
-									@click="customSoupOpen = true"
+									@click="openCreateSoupDialog"
 									>自建汤面</el-button
 								><el-button
 									type="primary"
@@ -1350,6 +1570,9 @@ function formatTime(time: string) {
 									:disabled="!user || Boolean(room && !canHost)"
 									@click="room ? switchRoomSoup() : createRoom()"
 									>{{ room ? '切换当前题目' : '创建房间' }}</el-button
+								>
+								<el-button type="info" @click="soupManagerOpen = true"
+									>管理汤面</el-button
 								>
 							</div>
 							<label>加入房间</label>
@@ -1574,26 +1797,30 @@ function formatTime(time: string) {
 
 			<el-dialog
 				v-model="customSoupOpen"
-				title="自建汤面"
+				:title="editingSoupId ? '编辑汤面' : '自建汤面'"
 				width="min(720px, 92vw)"
-				><el-form label-position="top"
-					><el-form-item label="标题"
+				><el-form
+					ref="customSoupFormRef"
+					:model="customSoup"
+					:rules="customSoupRules"
+					label-position="top"
+					><el-form-item label="标题" prop="title"
 						><el-input v-model="customSoup.title" /></el-form-item
-					><el-form-item label="汤面"
+					><el-form-item label="汤面" prop="surface"
 						><el-input
 							v-model="customSoup.surface"
 							type="textarea"
 							:autosize="{ minRows: 4 }" /></el-form-item
-					><el-form-item label="汤底"
+					><el-form-item label="汤底" prop="answer"
 						><el-input
 							v-model="customSoup.answer"
 							type="textarea"
 							:autosize="{ minRows: 5 }"
 					/></el-form-item>
 					<div class="dialog-grid">
-						<el-form-item label="分类"
+						<el-form-item label="分类" prop="category"
 							><el-input v-model="customSoup.category" /></el-form-item
-						><el-form-item label="难度"
+						><el-form-item label="难度" prop="difficulty"
 							><el-select v-model="customSoup.difficulty"
 								><el-option label="入门" value="easy" /><el-option
 									label="标准"
@@ -1602,12 +1829,66 @@ function formatTime(time: string) {
 									value="hard" /></el-select
 						></el-form-item></div></el-form
 				><template #footer
-					><el-button @click="customSoupOpen = false">取消</el-button
-					><el-button type="primary" @click="createCustomSoup"
-						>保存汤面</el-button
+					><el-button @click="closeCustomSoupDialog">取消</el-button
+					><el-button
+						type="primary"
+						:loading="creatingSoup"
+						@click="createCustomSoup"
+						>{{ editingSoupId ? '保存修改' : '保存汤面' }}</el-button
 					></template
 				></el-dialog
 			>
+			<el-drawer
+				v-model="soupManagerOpen"
+				:direction="soupDrawerDirection"
+				:size="isMobile ? '78%' : '420px'"
+				class="soup-manager-drawer"
+				title="我的题库"
+			>
+				<div class="soup-manager">
+					<el-empty
+						v-if="!soups.length"
+						description="还没有自己的汤面"
+						:image-size="72"
+					/>
+					<button
+						v-for="soup in soups"
+						v-else
+						:key="soup.id"
+						:class="[
+							'soup-manage-item',
+							{ active: selectedSoupId === soup.id },
+						]"
+						type="button"
+						@click="selectedSoupId = soup.id"
+					>
+						<span class="soup-manage-copy"
+							><strong>{{ soup.title }}</strong
+							><small
+								>{{ soup.category || '自建' }} ·
+								{{ difficultyLabels[soup.difficulty] }}</small
+							><em>{{ soup.surface }}</em></span
+						>
+						<span class="soup-manage-actions">
+							<el-button
+								round
+								plain
+								:icon="EditPen"
+								@click.stop="openEditSoupDialog(soup)"
+								>编辑</el-button
+							><el-button
+								round
+								type="danger"
+								plain
+								:icon="Delete"
+								:loading="deletingSoupId === soup.id"
+								@click.stop="deleteSoup(soup)"
+								>删除</el-button
+							>
+						</span>
+					</button>
+				</div>
+			</el-drawer>
 			<el-dialog
 				v-model="memberDialogOpen"
 				:title="(selectedMember?.displayName ?? '') + ' 的重要内容'"
