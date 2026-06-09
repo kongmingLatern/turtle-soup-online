@@ -63,10 +63,42 @@ textarea {
 }
 
 .app-shell {
+  position: relative;
+  isolation: isolate;
   width: min(1600px, calc(100% - 40px));
   min-height: 100vh;
   margin: 0 auto;
   padding: 26px 0 34px;
+}
+
+.room-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  opacity: 0;
+  background-image:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.34)),
+    var(--room-backdrop-image);
+  background-position: center;
+  background-size: cover;
+  transform: scale(1.02);
+  transition: opacity 0.28s ease;
+}
+
+.room-backdrop::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background:
+    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.03) 1px, transparent 1px),
+    radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.34), transparent 38rem);
+  background-size: 36px 36px, 36px 36px, auto;
+}
+
+.has-room-backdrop .room-backdrop {
+  opacity: 1;
 }
 
 .app-header,
@@ -81,6 +113,7 @@ textarea {
   justify-content: space-between;
   gap: 18px;
   margin-bottom: 18px;
+  padding: 8px 0;
 }
 
 .brand-block h1 {
@@ -119,10 +152,10 @@ textarea {
 
 .surface-card {
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(24px) saturate(1.08);
+  backdrop-filter: blur(28px) saturate(1.12);
 }
 
 .user-strip {
@@ -132,6 +165,17 @@ textarea {
   align-items: center;
   margin-bottom: 20px;
   padding: 14px 16px;
+}
+
+.background-choice {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .user-copy {
@@ -220,7 +264,7 @@ textarea {
 
 .desk-grid {
   display: grid;
-  grid-template-columns: minmax(300px, 0.82fr) minmax(520px, 1.32fr) minmax(360px, 0.92fr);
+  grid-template-columns: minmax(300px, 0.82fr) minmax(540px, 1.34fr) minmax(370px, 0.92fr);
   gap: 20px;
   align-items: start;
 }
@@ -343,6 +387,10 @@ textarea {
     background 0.18s ease;
 }
 
+.question-main {
+  min-width: 0;
+}
+
 .question-item:hover,
 .question-item.selected {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
@@ -403,6 +451,142 @@ textarea {
     linear-gradient(135deg, rgba(45, 212, 191, 0.1), transparent 44%),
     color-mix(in srgb, var(--surface-strong) 86%, transparent);
   cursor: default;
+}
+
+.host-console-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.ambience-preview {
+  min-height: 144px;
+  display: grid;
+  align-content: end;
+  gap: 6px;
+  overflow: hidden;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 8px;
+  background-image:
+    linear-gradient(180deg, rgba(2, 6, 23, 0.08), rgba(2, 6, 23, 0.68)),
+    var(--room-backdrop-image);
+  background-position: center;
+  background-size: cover;
+  color: #fff;
+  box-shadow: inset 0 -70px 90px rgba(2, 6, 23, 0.34);
+}
+
+.ambience-presets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.preset-chip {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 3px 8px;
+  align-items: center;
+  min-height: 54px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-strong) 76%, transparent);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.16s ease,
+    transform 0.16s ease,
+    background 0.16s ease;
+}
+
+.preset-chip:hover,
+.preset-chip.active {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  background: color-mix(in srgb, var(--surface-strong) 86%, var(--accent) 7%);
+}
+
+.preset-chip:hover {
+  transform: translateY(-1px);
+}
+
+.preset-chip > span {
+  grid-row: 1 / span 2;
+  width: 28px;
+  height: 28px;
+  border: 1px solid color-mix(in srgb, #fff 42%, var(--line));
+  border-radius: 50%;
+  box-shadow: inset 0 0 18px rgba(255, 255, 255, 0.12);
+}
+
+.preset-chip strong,
+.preset-chip small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preset-chip strong {
+  font-size: 13px;
+}
+
+.preset-chip small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ambience-preview span {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.ambience-preview strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 18px;
+}
+
+.host-console-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.host-console-grid .el-upload,
+.host-console-grid .el-button {
+  width: 100%;
+}
+
+.host-console-local {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 68%, transparent);
+}
+
+.volume-control {
+  display: grid;
+  grid-template-columns: 68px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.ambience-mini-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line);
 }
 
 .action-group {
@@ -811,6 +995,12 @@ textarea {
   transform: translateY(-50%);
 }
 
+.has-room-backdrop .tool-popover,
+.has-room-backdrop .float-tool {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: color-mix(in srgb, var(--surface-strong) 86%, transparent);
+}
+
 .tool-popover-head {
   display: flex;
   align-items: center;
@@ -822,7 +1012,7 @@ textarea {
 
 .tool-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
   flex: 1;
 }
 
@@ -981,6 +1171,7 @@ canvas.readonly {
   .control-column {
     position: static;
   }
+
 }
 
 @media (max-width: 760px) {
@@ -995,6 +1186,22 @@ canvas.readonly {
   .app-shell {
     width: 100%;
     padding: 14px 10px calc(104px + env(safe-area-inset-bottom));
+  }
+
+  .room-backdrop {
+    opacity: 0;
+  }
+
+  .has-room-backdrop .room-backdrop {
+    opacity: 0.72;
+  }
+
+  .room-backdrop::after {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.22)),
+      linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 23, 42, 0.03) 1px, transparent 1px);
+    background-size: auto, 28px 28px, 28px 28px;
   }
 
   .app-header,
@@ -1032,11 +1239,17 @@ canvas.readonly {
 
   .header-actions {
     width: 100%;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.84fr) 44px;
+    gap: 8px;
   }
 
   .header-actions .el-button:first-child {
-    flex: 1;
+    width: 100%;
+  }
+
+  .header-actions .el-button + .el-button {
+    margin-left: 0;
   }
 
   .surface-card {
@@ -1049,6 +1262,10 @@ canvas.readonly {
     gap: 12px;
     margin-bottom: 12px;
     padding: 12px;
+  }
+
+  .background-choice {
+    justify-content: space-between;
   }
 
   .current-user {
@@ -1141,6 +1358,58 @@ canvas.readonly {
   .rank-card,
   .tools-card {
     padding: 14px;
+  }
+
+  .host-console-panel {
+    gap: 12px;
+  }
+
+  .ambience-preview {
+    min-height: 118px;
+    padding: 12px;
+  }
+
+  .ambience-preview strong {
+    font-size: 16px;
+  }
+
+  .host-console-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .host-console-local {
+    grid-template-columns: 1fr;
+  }
+
+  .ambience-presets {
+    display: flex;
+    margin: 0 -2px;
+    padding: 0 2px 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .ambience-presets::-webkit-scrollbar {
+    display: none;
+  }
+
+  .preset-chip {
+    flex: 0 0 128px;
+  }
+
+  .host-console-grid .el-button {
+    min-height: 40px;
+    padding: 0 8px;
+  }
+
+  .volume-control {
+    grid-template-columns: 64px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .ambience-mini-actions {
+    justify-content: flex-start;
   }
 
   .section-head {

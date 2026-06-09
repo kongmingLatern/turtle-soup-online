@@ -7,14 +7,20 @@ import {
 	Delete,
 	EditPen,
 	Flag,
+	Headset,
 	Hide,
 	House,
 	Moon,
+	Picture,
 	Plus,
+	Refresh,
 	Right,
+	Setting,
 	Share,
 	Sunny,
 	User,
+	VideoPause,
+	VideoPlay,
 } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
@@ -34,6 +40,7 @@ type Verdict = 'yes' | 'no' | 'both' | 'irrelevant'
 type Difficulty = 'easy' | 'medium' | 'hard'
 type QuestionQuality = 'none' | 'helpful' | 'key' | 'breakthrough'
 type TruthGuess = 'none' | 'clue' | 'motive' | 'full'
+type AmbiencePresetId = 'light' | 'mist' | 'archive' | 'noir'
 
 interface AuthUser {
 	id: string
@@ -69,6 +76,21 @@ interface Question {
 	answeredAt?: string | null
 }
 
+interface RoomAmbience {
+	backgroundImageDataUrl: string
+	backgroundPreset: AmbiencePresetId
+	musicDataUrl: string
+	musicName: string
+	musicVolume: number
+}
+
+interface AmbiencePreset {
+	id: AmbiencePresetId
+	label: string
+	tone: string
+	background: string
+}
+
 interface RoomState {
 	id: string
 	code: string
@@ -76,6 +98,11 @@ interface RoomState {
 	surface: string
 	answer: string
 	canvasDataUrl: string
+	ambience?: Partial<RoomAmbience> | null
+	backgroundImageDataUrl?: string
+	musicDataUrl?: string
+	musicName?: string
+	musicVolume?: number
 	solved: boolean
 	revealed: boolean
 	settlement?: Settlement
@@ -129,6 +156,47 @@ interface Settlement {
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
 const STORAGE_TOKEN = 'turtle-soup:token'
 const STORAGE_THEME = 'turtle-soup:theme'
+const STORAGE_AMBIENCE_PREFIX = 'turtle-soup:ambience:'
+const STORAGE_USE_HOST_BACKGROUND_PREFIX = 'turtle-soup:host-background:'
+const MAX_BACKGROUND_BYTES = 5 * 1024 * 1024
+const MAX_MUSIC_BYTES = 12 * 1024 * 1024
+const DEFAULT_AMBIENCE: RoomAmbience = {
+	backgroundImageDataUrl: '',
+	backgroundPreset: 'light',
+	musicDataUrl: '',
+	musicName: '',
+	musicVolume: 56,
+}
+const AMBIENCE_PRESETS: AmbiencePreset[] = [
+	{
+		id: 'light',
+		label: '旧卷',
+		tone: '青灰茶墨',
+		background:
+			'radial-gradient(circle at 16% 10%, rgba(92, 119, 94, 0.28), transparent 28rem), radial-gradient(circle at 88% 14%, rgba(146, 96, 35, 0.2), transparent 26rem), radial-gradient(circle at 42% 92%, rgba(57, 77, 70, 0.18), transparent 30rem), linear-gradient(135deg, #ded3bb, #cfd8c8 46%, #e8dfca)',
+	},
+	{
+		id: 'mist',
+		label: '雾夜',
+		tone: '冷雾微光',
+		background:
+			'radial-gradient(circle at 18% 18%, rgba(20, 184, 166, 0.34), transparent 28rem), radial-gradient(circle at 82% 0%, rgba(99, 102, 241, 0.24), transparent 30rem), linear-gradient(135deg, #071312, #172033 52%, #0a0d13)',
+	},
+	{
+		id: 'archive',
+		label: '档案室',
+		tone: '暖灯纸页',
+		background:
+			'radial-gradient(circle at 16% 12%, rgba(245, 158, 11, 0.26), transparent 24rem), radial-gradient(circle at 88% 16%, rgba(20, 184, 166, 0.18), transparent 26rem), linear-gradient(135deg, #16120d, #2d261c 46%, #0c1116)',
+	},
+	{
+		id: 'noir',
+		label: '暗潮',
+		tone: '深海压迫',
+		background:
+			'radial-gradient(circle at 50% -10%, rgba(45, 212, 191, 0.2), transparent 26rem), radial-gradient(circle at 85% 72%, rgba(15, 23, 42, 0.82), transparent 30rem), linear-gradient(145deg, #030712, #0f172a 48%, #071b1c)',
+	},
+]
 
 const verdictLabels: Record<Verdict, string> = {
 	yes: '是',
@@ -185,8 +253,14 @@ const questionText = ref('')
 const selectedQuestionId = ref('')
 const shareUrl = ref(window.location.href)
 const answerHidden = ref(true)
-const activePanel = ref('answer')
+const activePanel = ref<'host' | 'player' | 'answer' | 'canvas'>('answer')
 const toolDockOpen = ref(false)
+const audioRef = ref<HTMLAudioElement | null>(null)
+const ambienceDraft = reactive<RoomAmbience>({ ...DEFAULT_AMBIENCE })
+const ambienceVolume = ref(DEFAULT_AMBIENCE.musicVolume)
+const useHostBackground = ref(true)
+const useRoomMusic = ref(false)
+const musicPlaying = ref(false)
 const brushColor = ref('#14b8a6')
 const brushSize = ref(6)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -209,6 +283,8 @@ const customSoupOpen = ref(false)
 const soupManagerOpen = ref(false)
 const editingSoupId = ref('')
 const isMobile = ref(false)
+const ambienceServerUnsupported = ref(false)
+const ambiencePersistWarned = ref(false)
 const customSoup = reactive({
 	title: '',
 	surface: '',
@@ -266,7 +342,10 @@ let socket: Socket | null = null
 let canvasSaveTimer: number | undefined
 let canvasPreviewTimer: number | undefined
 let roomSaveTimer: number | undefined
+let syncingAmbience = false
+let ambienceDirty = false
 const presenceNotifyAt = new Map<string, number>()
+const roomAmbienceCache = new Map<string, RoomAmbience>()
 
 const canHost = computed(() =>
 	Boolean(user.value && room.value?.host.id === user.value.id),
@@ -365,6 +444,48 @@ const onlineHint = computed(() =>
 		? `后端实时房间 ${room.value.code}，Socket 状态：${socketStatus.value}`
 		: '登录后可创建房间或输入房间号加入。',
 )
+const activeBackgroundImage = computed(
+	() => ambienceDraft.backgroundImageDataUrl,
+)
+const activeAmbiencePreset = computed(
+	() =>
+		AMBIENCE_PRESETS.find(
+			preset => preset.id === ambienceDraft.backgroundPreset,
+		) ?? AMBIENCE_PRESETS[0],
+)
+const activeBackdropCss = computed(() =>
+	useHostBackground.value
+		? activeBackgroundImage.value
+			? cssUrl(activeBackgroundImage.value)
+			: activeAmbiencePreset.value.background
+		: '',
+)
+const hostBackdropCss = computed(() =>
+	activeBackgroundImage.value
+		? cssUrl(activeBackgroundImage.value)
+		: activeAmbiencePreset.value.background,
+)
+const activeBackgroundLabel = computed(() =>
+	activeBackgroundImage.value ? '自定义背景' : activeAmbiencePreset.value.label,
+)
+const roomMusicDataUrl = computed(() => ambienceDraft.musicDataUrl)
+const roomMusicName = computed(() => ambienceDraft.musicName || '房间音乐')
+const activeMusicDataUrl = computed(() =>
+	useRoomMusic.value ? roomMusicDataUrl.value : '',
+)
+const hasCustomAmbience = computed(() =>
+	Boolean(activeBackgroundImage.value || roomMusicDataUrl.value),
+)
+const roomBackdropStyle = computed(() =>
+	activeBackdropCss.value
+		? { '--room-backdrop-image': activeBackdropCss.value }
+		: {},
+)
+const ambiencePreviewStyle = computed(() =>
+	hostBackdropCss.value
+		? { '--room-backdrop-image': hostBackdropCss.value }
+		: {},
+)
 // const selectedSoupSummary = computed(() =>
 // 	soups.value.find(soup => soup.id === selectedSoupId.value),
 // )
@@ -381,11 +502,46 @@ watch(
 
 watch(canHost, value => {
 	selectedRole.value = value ? 'host' : 'player'
-	if (!value && activePanel.value === 'answer') {
+	if (!value && activePanel.value !== 'canvas') {
 		toolDockOpen.value = false
 		activePanel.value = 'canvas'
 		answerHidden.value = true
 	}
+})
+
+watch(ambienceVolume, value => {
+	const nextVolume = clampVolume(value)
+	if (audioRef.value) audioRef.value.volume = nextVolume / 100
+	if (ambienceDraft.musicVolume === nextVolume) return
+	ambienceDraft.musicVolume = nextVolume
+	if (!room.value) return
+	room.value.ambience = { ...ambienceDraft }
+	rememberRoomAmbience(room.value.code, ambienceDraft)
+	if (canHost.value && !syncingAmbience) {
+		ambienceDirty = true
+		queueRoomSave()
+	}
+})
+
+watch(activeMusicDataUrl, () => {
+	musicPlaying.value = false
+	nextTick(() => {
+		if (!audioRef.value) return
+		audioRef.value.load()
+		audioRef.value.volume = ambienceVolume.value / 100
+	})
+})
+
+watch(useRoomMusic, value => {
+	if (!value) audioRef.value?.pause()
+})
+
+watch(useHostBackground, value => {
+	if (!room.value) return
+	localStorage.setItem(
+		STORAGE_USE_HOST_BACKGROUND_PREFIX + room.value.code,
+		value ? '1' : '0',
+	)
 })
 
 watch(authMode, () => {
@@ -645,6 +801,9 @@ async function joinRoom(code = roomCodeInput.value, showMessage = true) {
 function applyRoom(data: RoomState) {
 	room.value = data
 	roomCodeInput.value = data.code
+	useHostBackground.value =
+		localStorage.getItem(STORAGE_USE_HOST_BACKGROUND_PREFIX + data.code) !== '0'
+	syncAmbienceFromRoom(data)
 	syncSelectedSoupFromRoom(data)
 	updateShareUrl()
 	connectSocket(data.code)
@@ -670,6 +829,104 @@ function resetRoundState(nextRoom?: RoomState) {
 	nextTick(() => restoreCanvas(''))
 }
 
+function normalizeAmbience(roomData: RoomState): RoomAmbience {
+	const cached =
+		roomAmbienceCache.get(roomData.code) ?? loadCachedAmbience(roomData.code)
+	const source = {
+		...(cached ?? {}),
+		...(roomData.ambience ?? {}),
+		backgroundImageDataUrl:
+			roomData.backgroundImageDataUrl ??
+			roomData.ambience?.backgroundImageDataUrl ??
+			cached?.backgroundImageDataUrl,
+		backgroundPreset:
+			roomData.ambience?.backgroundPreset ?? cached?.backgroundPreset,
+		musicDataUrl:
+			roomData.musicDataUrl ??
+			roomData.ambience?.musicDataUrl ??
+			cached?.musicDataUrl,
+		musicName:
+			roomData.musicName ?? roomData.ambience?.musicName ?? cached?.musicName,
+		musicVolume:
+			roomData.musicVolume ??
+			roomData.ambience?.musicVolume ??
+			cached?.musicVolume,
+	}
+	return {
+		backgroundImageDataUrl:
+			source.backgroundImageDataUrl ?? DEFAULT_AMBIENCE.backgroundImageDataUrl,
+		backgroundPreset: isAmbiencePresetId(source.backgroundPreset)
+			? source.backgroundPreset
+			: DEFAULT_AMBIENCE.backgroundPreset,
+		musicDataUrl: source.musicDataUrl ?? DEFAULT_AMBIENCE.musicDataUrl,
+		musicName: source.musicName ?? DEFAULT_AMBIENCE.musicName,
+		musicVolume: clampVolume(
+			source.musicVolume ?? DEFAULT_AMBIENCE.musicVolume,
+		),
+	}
+}
+
+function isAmbiencePresetId(value: unknown): value is AmbiencePresetId {
+	return AMBIENCE_PRESETS.some(preset => preset.id === value)
+}
+
+function syncAmbienceFromRoom(roomData: RoomState) {
+	syncingAmbience = true
+	const nextAmbience = normalizeAmbience(roomData)
+	Object.assign(ambienceDraft, nextAmbience)
+	ambienceVolume.value = nextAmbience.musicVolume
+	rememberRoomAmbience(roomData.code, nextAmbience)
+	ambienceDirty = false
+	nextTick(() => {
+		if (audioRef.value) audioRef.value.volume = nextAmbience.musicVolume / 100
+		syncingAmbience = false
+	})
+}
+
+function rememberRoomAmbience(code: string, ambience: RoomAmbience) {
+	roomAmbienceCache.set(code, { ...ambience })
+	try {
+		localStorage.setItem(
+			STORAGE_AMBIENCE_PREFIX + code,
+			JSON.stringify({ ...ambience, cachedAt: Date.now() }),
+		)
+	} catch {
+		// Large uploaded audio can exceed browser storage quota; live preview still works.
+	}
+}
+
+function loadCachedAmbience(code: string): RoomAmbience | undefined {
+	const cached = localStorage.getItem(STORAGE_AMBIENCE_PREFIX + code)
+	if (!cached) return undefined
+	try {
+		const parsed = JSON.parse(cached) as Partial<RoomAmbience>
+		return {
+			backgroundImageDataUrl:
+				parsed.backgroundImageDataUrl ??
+				DEFAULT_AMBIENCE.backgroundImageDataUrl,
+			backgroundPreset: isAmbiencePresetId(parsed.backgroundPreset)
+				? parsed.backgroundPreset
+				: DEFAULT_AMBIENCE.backgroundPreset,
+			musicDataUrl: parsed.musicDataUrl ?? DEFAULT_AMBIENCE.musicDataUrl,
+			musicName: parsed.musicName ?? DEFAULT_AMBIENCE.musicName,
+			musicVolume: clampVolume(
+				parsed.musicVolume ?? DEFAULT_AMBIENCE.musicVolume,
+			),
+		}
+	} catch {
+		localStorage.removeItem(STORAGE_AMBIENCE_PREFIX + code)
+		return undefined
+	}
+}
+
+function clampVolume(value: number) {
+	return Math.min(100, Math.max(0, Math.round(Number(value) || 0)))
+}
+
+function cssUrl(value: string) {
+	return `url("${value.replace(/["\\]/g, '\\$&')}")`
+}
+
 function connectSocket(code: string) {
 	if (!socket) {
 		socket = io(API_BASE, { transports: ['websocket', 'polling'] })
@@ -685,6 +942,7 @@ function connectSocket(code: string) {
 			if (nextRoom.code !== room.value?.code) return
 			room.value = nextRoom
 			selectedRole.value = canHost.value ? 'host' : 'player'
+			syncAmbienceFromRoom(nextRoom)
 			syncSelectedSoupFromRoom(nextRoom)
 			if (nextRoom.settlement) settlement.value = nextRoom.settlement
 			nextTick(() => restoreCanvas())
@@ -829,18 +1087,48 @@ function queueRoomSave() {
 async function saveRoom() {
 	if (!canHost.value || !room.value) return
 	savingRoom.value = true
+	const nextAmbience = { ...ambienceDraft, musicVolume: ambienceVolume.value }
+	const basePayload = {
+		title: room.value.title,
+		surface: room.value.surface,
+		answer: room.value.answer,
+		canvasDataUrl: room.value.canvasDataUrl,
+		solved: room.value.solved,
+	}
+	const ambiencePayload = {
+		...basePayload,
+		ambience: nextAmbience,
+		backgroundImageDataUrl: nextAmbience.backgroundImageDataUrl,
+		musicDataUrl: nextAmbience.musicDataUrl,
+		musicName: nextAmbience.musicName,
+		musicVolume: nextAmbience.musicVolume,
+	}
 	try {
 		const data = await request<RoomState>(`/rooms/${room.value.code}`, {
 			method: 'PATCH',
-			body: JSON.stringify({
-				title: room.value.title,
-				surface: room.value.surface,
-				answer: room.value.answer,
-				canvasDataUrl: room.value.canvasDataUrl,
-				solved: room.value.solved,
-			}),
+			body: JSON.stringify(
+				ambienceDirty && !ambienceServerUnsupported.value
+					? ambiencePayload
+					: basePayload,
+			),
 		})
+		rememberRoomAmbience(data.code, nextAmbience)
 		room.value = data
+		syncAmbienceFromRoom(data)
+	} catch (error) {
+		if (ambienceServerUnsupported.value || !room.value) throw error
+		rememberRoomAmbience(room.value.code, nextAmbience)
+		const data = await request<RoomState>(`/rooms/${room.value.code}`, {
+			method: 'PATCH',
+			body: JSON.stringify(basePayload),
+		})
+		ambienceServerUnsupported.value = true
+		room.value = data
+		syncAmbienceFromRoom(data)
+		if (!ambiencePersistWarned.value) {
+			ambiencePersistWarned.value = true
+			ElMessage.warning('当前后端暂未保存沉浸设置，已保留本机预览')
+		}
 	} finally {
 		savingRoom.value = false
 	}
@@ -946,16 +1234,18 @@ async function transferHost(member: MemberStats) {
 	)
 	room.value = data
 	selectedRole.value = canHost.value ? 'host' : 'player'
-	if (activePanel.value === 'answer') {
+	if (activePanel.value !== 'canvas') {
 		toolDockOpen.value = false
 		activePanel.value = 'canvas'
 	}
 	ElMessage.success(`已将主持人交给 ${member.displayName}`)
 }
 
-function openToolDock(panel: 'answer' | 'canvas') {
-	if (panel === 'answer' && !canHost.value)
-		return ElMessage.warning('只有主持人可以查看汤底')
+function openToolDock(panel: 'host' | 'player' | 'answer' | 'canvas') {
+	if ((panel === 'host' || panel === 'answer') && !canHost.value)
+		return ElMessage.warning('只有主持人可以使用这个面板')
+	if (panel === 'player' && canHost.value)
+		return ElMessage.warning('主持人请使用控制台')
 	activePanel.value = panel
 	toolDockOpen.value = true
 	if (panel === 'canvas') {
@@ -1002,6 +1292,127 @@ function beforeAvatarUpload(file: File) {
 	}
 	void uploadAvatar(file)
 	return false
+}
+
+function beforeBackgroundUpload(file: File) {
+	if (!canHost.value) {
+		ElMessage.warning('只有主持人可以更改房间背景')
+		return false
+	}
+	if (!file.type.startsWith('image/')) {
+		ElMessage.warning('请选择图片文件')
+		return false
+	}
+	if (file.size > MAX_BACKGROUND_BYTES) {
+		ElMessage.warning('背景图片请控制在 5MB 以内')
+		return false
+	}
+	void applyBackgroundFile(file)
+	return false
+}
+
+async function applyBackgroundFile(file: File) {
+	const dataUrl = await fileToDataUrl(file)
+	applyAmbiencePatch({ backgroundImageDataUrl: dataUrl })
+	ElMessage.success('房间背景已更新')
+}
+
+function beforeMusicUpload(file: File) {
+	if (!canHost.value) {
+		ElMessage.warning('只有主持人可以更改背景音乐')
+		return false
+	}
+	if (!file.type.startsWith('audio/')) {
+		ElMessage.warning('请选择音频文件')
+		return false
+	}
+	if (file.size > MAX_MUSIC_BYTES) {
+		ElMessage.warning('背景音乐请控制在 12MB 以内')
+		return false
+	}
+	void applyMusicFile(file)
+	return false
+}
+
+async function applyMusicFile(file: File) {
+	const dataUrl = await fileToDataUrl(file)
+	applyAmbiencePatch({
+		musicDataUrl: dataUrl,
+		musicName: file.name.replace(/\.[^.]+$/, '') || '背景音乐',
+	})
+	ElMessage.success('房间背景音乐已载入')
+}
+
+function applyAmbiencePatch(patch: Partial<RoomAmbience>) {
+	if (!canHost.value || !room.value) return
+	const nextAmbience = {
+		...ambienceDraft,
+		...patch,
+		musicVolume: clampVolume(patch.musicVolume ?? ambienceVolume.value),
+	}
+	Object.assign(ambienceDraft, nextAmbience)
+	ambienceVolume.value = nextAmbience.musicVolume
+	room.value.ambience = { ...nextAmbience }
+	rememberRoomAmbience(room.value.code, nextAmbience)
+	ambienceDirty = true
+	queueRoomSave()
+}
+
+function chooseAmbiencePreset(presetId: AmbiencePresetId) {
+	if (!canHost.value) return
+	applyAmbiencePatch({
+		backgroundPreset: presetId,
+		backgroundImageDataUrl: '',
+	})
+	ElMessage.success('房间氛围已切换')
+}
+
+async function toggleMusicPlayback() {
+	if (!roomMusicDataUrl.value || !audioRef.value) {
+		return ElMessage.warning('等待主持人上传房间音乐')
+	}
+	if (!useRoomMusic.value) {
+		useRoomMusic.value = true
+	}
+	if (musicPlaying.value) {
+		audioRef.value.pause()
+		return
+	}
+	try {
+		audioRef.value.volume = ambienceVolume.value / 100
+		await audioRef.value.play()
+	} catch {
+		ElMessage.warning('浏览器需要你点击页面后才能播放音乐')
+	}
+}
+
+function clearBackgroundImage() {
+	if (!canHost.value) return
+	applyAmbiencePatch({ backgroundImageDataUrl: '' })
+	ElMessage.success('已恢复为预设背景')
+}
+
+function clearMusic() {
+	if (!canHost.value) return
+	audioRef.value?.pause()
+	useRoomMusic.value = false
+	applyAmbiencePatch({ musicDataUrl: '', musicName: '' })
+	ElMessage.success('房间背景音乐已移除')
+}
+
+function resetAmbience() {
+	if (!canHost.value) return
+	audioRef.value?.pause()
+	useRoomMusic.value = false
+	Object.assign(ambienceDraft, DEFAULT_AMBIENCE)
+	ambienceVolume.value = DEFAULT_AMBIENCE.musicVolume
+	if (room.value) {
+		room.value.ambience = { ...DEFAULT_AMBIENCE }
+		rememberRoomAmbience(room.value.code, DEFAULT_AMBIENCE)
+		ambienceDirty = true
+		queueRoomSave()
+	}
+	ElMessage.success('沉浸设置已重置')
 }
 
 function fileToDataUrl(file: File) {
@@ -1141,7 +1552,19 @@ function formatTime(time: string) {
 
 <template>
 	<el-config-provider>
-		<main class="app-shell">
+		<main
+			:class="['app-shell', { 'has-room-backdrop': room }]"
+			:style="roomBackdropStyle"
+		>
+			<div class="room-backdrop" />
+			<audio
+				ref="audioRef"
+				:src="activeMusicDataUrl"
+				loop
+				@play="musicPlaying = true"
+				@pause="musicPlaying = false"
+				@ended="musicPlaying = false"
+			/>
 			<header class="app-header">
 				<div class="brand-block">
 					<p class="eyebrow">Turtle Soup Online</p>
@@ -1679,6 +2102,18 @@ function formatTime(time: string) {
 			</section>
 
 			<div class="floating-tools">
+				<el-tooltip v-if="canHost" content="主持人控制台" placement="left">
+					<button
+						:class="[
+							'float-tool',
+							{ active: toolDockOpen && activePanel === 'host' },
+						]"
+						type="button"
+						@click="openToolDock('host')"
+					>
+						<Setting />
+					</button>
+				</el-tooltip>
 				<el-tooltip v-if="canHost" content="汤底" placement="left">
 					<button
 						:class="[
@@ -1689,6 +2124,18 @@ function formatTime(time: string) {
 						@click="openToolDock('answer')"
 					>
 						<Hide />
+					</button>
+				</el-tooltip>
+				<el-tooltip v-if="room && !canHost" content="玩家设置" placement="left">
+					<button
+						:class="[
+							'float-tool',
+							{ active: toolDockOpen && activePanel === 'player' },
+						]"
+						type="button"
+						@click="openToolDock('player')"
+					>
+						<Setting />
 					</button>
 				</el-tooltip>
 				<el-tooltip content="画板" placement="left">
@@ -1709,11 +2156,28 @@ function formatTime(time: string) {
 				<div class="tool-popover-head">
 					<div class="tool-tabs">
 						<button
+							v-if="canHost"
+							:class="{ active: activePanel === 'host' }"
+							type="button"
+							@click="openToolDock('host')"
+						>
+							<Setting /> 控制台
+						</button>
+						<button
+							v-if="canHost"
 							:class="{ active: activePanel === 'answer' }"
 							type="button"
 							@click="openToolDock('answer')"
 						>
 							<Hide /> 汤底
+						</button>
+						<button
+							v-if="room && !canHost"
+							:class="{ active: activePanel === 'player' }"
+							type="button"
+							@click="openToolDock('player')"
+						>
+							<Setting /> 设置
 						</button>
 						<button
 							:class="{ active: activePanel === 'canvas' }"
@@ -1724,6 +2188,176 @@ function formatTime(time: string) {
 						</button>
 					</div>
 					<el-button text @click="toolDockOpen = false">收起</el-button>
+				</div>
+
+				<div
+					v-if="canHost"
+					v-show="activePanel === 'host'"
+					class="tool-panel host-console-panel"
+				>
+					<div
+						:class="['ambience-preview', { custom: activeBackgroundImage }]"
+						:style="ambiencePreviewStyle"
+					>
+						<span
+							>{{ activeBackgroundLabel }} ·
+							{{ activeAmbiencePreset.tone }}</span
+						>
+						<strong>{{
+							roomMusicDataUrl ? roomMusicName : '未设置房间音乐'
+						}}</strong>
+					</div>
+					<div class="ambience-presets">
+						<button
+							v-for="preset in AMBIENCE_PRESETS"
+							:key="preset.id"
+							:class="[
+								'preset-chip',
+								{
+									active:
+										!activeBackgroundImage &&
+										ambienceDraft.backgroundPreset === preset.id,
+								},
+							]"
+							type="button"
+							@click="chooseAmbiencePreset(preset.id)"
+						>
+							<span :style="{ background: preset.background }" />
+							<strong>{{ preset.label }}</strong>
+							<small>{{ preset.tone }}</small>
+						</button>
+					</div>
+					<div class="host-console-grid">
+						<el-upload
+							:show-file-list="false"
+							:before-upload="beforeBackgroundUpload"
+							accept="image/*"
+						>
+							<el-button plain :icon="Picture">更换背景</el-button>
+						</el-upload>
+						<el-upload
+							:show-file-list="false"
+							:before-upload="beforeMusicUpload"
+							accept="audio/*"
+						>
+							<el-button plain :icon="Headset">上传房间音乐</el-button>
+						</el-upload>
+						<el-button
+							:icon="musicPlaying ? VideoPause : VideoPlay"
+							:disabled="!roomMusicDataUrl"
+							@click="toggleMusicPlayback"
+							plain
+							>{{ musicPlaying ? '暂停音乐' : '播放音乐' }}</el-button
+						>
+						<div>
+							<el-button :icon="Refresh" plain @click="resetAmbience"
+								>重置氛围</el-button
+							>
+						</div>
+					</div>
+					<div class="host-console-local">
+						<div class="background-choice">
+							<span>使用房间背景</span>
+							<el-switch
+								v-model="useHostBackground"
+								inline-prompt
+								active-text="使用"
+								inactive-text="默认"
+							/>
+						</div>
+						<div class="background-choice">
+							<span>播放房间音乐</span>
+							<el-switch
+								v-model="useRoomMusic"
+								:disabled="!roomMusicDataUrl"
+								inline-prompt
+								active-text="开启"
+								inactive-text="关闭"
+							/>
+						</div>
+					</div>
+					<div class="volume-control">
+						<span>音乐音量</span>
+						<el-slider
+							v-model="ambienceVolume"
+							:min="0"
+							:max="100"
+							:disabled="!roomMusicDataUrl"
+						/>
+					</div>
+					<div v-if="hasCustomAmbience" class="ambience-mini-actions">
+						<el-button
+							text
+							:disabled="!activeBackgroundImage"
+							@click="clearBackgroundImage"
+							>移除背景</el-button
+						>
+						<el-button
+							text
+							type="danger"
+							:disabled="!roomMusicDataUrl"
+							@click="clearMusic"
+							>移除房间音乐</el-button
+						>
+					</div>
+				</div>
+
+				<div
+					v-if="room && !canHost"
+					v-show="activePanel === 'player'"
+					class="tool-panel host-console-panel"
+				>
+					<div
+						:class="['ambience-preview', { custom: activeBackgroundImage }]"
+						:style="ambiencePreviewStyle"
+					>
+						<span
+							>{{ activeBackgroundLabel }} ·
+							{{ activeAmbiencePreset.tone }}</span
+						>
+						<strong>{{
+							roomMusicDataUrl ? roomMusicName : '主持人尚未上传房间音乐'
+						}}</strong>
+					</div>
+					<div class="host-console-local">
+						<div class="background-choice">
+							<span>使用房间背景</span>
+							<el-switch
+								v-model="useHostBackground"
+								inline-prompt
+								active-text="使用"
+								inactive-text="默认"
+							/>
+						</div>
+						<div class="background-choice">
+							<span>播放房间音乐</span>
+							<el-switch
+								v-model="useRoomMusic"
+								:disabled="!roomMusicDataUrl"
+								inline-prompt
+								active-text="开启"
+								inactive-text="关闭"
+							/>
+						</div>
+					</div>
+					<div class="host-console-grid">
+						<el-button
+							:icon="musicPlaying ? VideoPause : VideoPlay"
+							:disabled="!roomMusicDataUrl"
+							@click="toggleMusicPlayback"
+							plain
+							>{{ musicPlaying ? '暂停音乐' : '播放音乐' }}</el-button
+						>
+					</div>
+					<div class="volume-control">
+						<span>音乐音量</span>
+						<el-slider
+							v-model="ambienceVolume"
+							:min="0"
+							:max="100"
+							:disabled="!roomMusicDataUrl"
+						/>
+					</div>
 				</div>
 
 				<div
