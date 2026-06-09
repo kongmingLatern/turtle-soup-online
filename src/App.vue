@@ -106,9 +106,27 @@ interface RoomState {
 	solved: boolean
 	revealed: boolean
 	settlement?: Settlement
+	soupHistory?: SoupHistoryItem[] | null
+	ratingMap?: Record<string, number> | null
 	host: AuthUser
 	questions: Question[]
 	updatedAt: string
+}
+
+interface SoupHistoryItem {
+	id: string
+	title: string
+	surface: string
+	answer: string
+	host?: {
+		id: string
+		username: string
+		displayName: string
+	}
+	startedAt: string
+	revealedAt?: string
+	ratingAverage?: number
+	ratingCount?: number
 }
 
 interface AuthResponse {
@@ -476,6 +494,14 @@ const activeMusicDataUrl = computed(() =>
 const hasCustomAmbience = computed(() =>
 	Boolean(activeBackgroundImage.value || roomMusicDataUrl.value),
 )
+const soupHistory = computed(() => [...(room.value?.soupHistory ?? [])].reverse())
+const currentSoupRating = computed(() => room.value?.soupHistory?.at(-1))
+const mySoupRating = computed(() =>
+	user.value && room.value?.ratingMap ? room.value.ratingMap[user.value.id] : 0,
+)
+const canRateCurrentSoup = computed(() =>
+	Boolean(room.value?.revealed && user.value && !canHost.value),
+)
 const roomBackdropStyle = computed(() =>
 	activeBackdropCss.value
 		? { '--room-backdrop-image': activeBackdropCss.value }
@@ -486,9 +512,18 @@ const ambiencePreviewStyle = computed(() =>
 		? { '--room-backdrop-image': hostBackdropCss.value }
 		: {},
 )
-// const selectedSoupSummary = computed(() =>
-// 	soups.value.find(soup => soup.id === selectedSoupId.value),
-// )
+const selectedSoupForSwitch = computed(() =>
+	soups.value.find(soup => soup.id === selectedSoupId.value),
+)
+const isSelectedCurrentSoup = computed(() =>
+	Boolean(
+		room.value &&
+			selectedSoupForSwitch.value &&
+			room.value.title === selectedSoupForSwitch.value.title &&
+			room.value.surface === selectedSoupForSwitch.value.surface &&
+			room.value.answer === selectedSoupForSwitch.value.answer,
+	),
+)
 const soupDrawerDirection = computed(() => (isMobile.value ? 'btt' : 'rtl'))
 
 watch(
@@ -769,6 +804,7 @@ async function switchRoomSoup() {
 	if (!room.value) return createRoom()
 	if (!canHost.value) return ElMessage.warning('只有主持人可以切换题目')
 	if (!selectedSoupId.value) return ElMessage.warning('请先选择汤面')
+	if (isSelectedCurrentSoup.value) return ElMessage.warning('请先选择新的汤面')
 	const confirmed = window.confirm(
 		'切换海龟汤会清空当前房间的问答、重要线索、画板和结算记录，确定切换吗？',
 	)
@@ -822,6 +858,8 @@ function syncSelectedSoupFromRoom(data: RoomState) {
 
 function resetRoundState(nextRoom?: RoomState) {
 	if (nextRoom) room.value = nextRoom
+	if (room.value) room.value.questions = []
+	questionText.value = ''
 	settlement.value = null
 	settlementDialogOpen.value = false
 	selectedQuestionId.value = ''
@@ -949,9 +987,9 @@ function connectSocket(code: string) {
 		})
 		socket.on(
 			'room-reset',
-			(event: { roomCode: string; message: string; at: string }) => {
+			(event: { roomCode: string; room?: RoomState; message: string; at: string }) => {
 				if (event.roomCode !== room.value?.code) return
-				resetRoundState()
+				resetRoundState(event.room)
 				const systemEvent: PresenceEvent = {
 					type: 'system',
 					user: {
@@ -1266,6 +1304,19 @@ async function revealAnswer() {
 	)
 	settlementDialogOpen.value = true
 	await joinRoom(room.value.code, false)
+}
+
+async function rateCurrentSoup(rating: number) {
+	if (!room.value || !canRateCurrentSoup.value) return
+	try {
+		room.value = await request<RoomState>(`/rooms/${room.value.code}/rating`, {
+			method: 'POST',
+			body: JSON.stringify({ rating }),
+		})
+		ElMessage.success('评分已提交')
+	} catch (error) {
+		ElMessage.error(error instanceof Error ? error.message : '评分失败')
+	}
 }
 
 async function uploadAvatar(file: File) {
@@ -1978,7 +2029,13 @@ function formatTime(time: string) {
 									>管理汤面</el-button
 								>
 							</div> -->
-							<p v-if="room && canHost" class="switch-warning">
+							<p
+								v-if="room && canHost && isSelectedCurrentSoup"
+								class="switch-warning"
+							>
+								请先选择新的汤面
+							</p>
+							<p v-else-if="room && canHost" class="switch-warning">
 								切换后会清空当前房间的问答、重要线索、画板和结算记录。
 							</p>
 							<div class="config-actions">
@@ -1990,7 +2047,9 @@ function formatTime(time: string) {
 								><el-button
 									type="primary"
 									:icon="Plus"
-									:disabled="!user || Boolean(room && !canHost)"
+									:disabled="
+										!user || Boolean(room && (!canHost || isSelectedCurrentSoup))
+									"
 									@click="room ? switchRoomSoup() : createRoom()"
 									>{{ room ? '切换当前题目' : '创建房间' }}</el-button
 								>
@@ -2096,6 +2155,46 @@ function formatTime(time: string) {
 								><span>{{ entry.user.displayName }}</span
 								><b>{{ entry.total }}</b>
 							</div>
+						</div>
+					</section>
+					<section v-if="soupHistory.length" class="surface-card soup-history-card">
+						<div class="section-head compact">
+							<div class="title-with-icon">
+								<Flag /><strong>本房间汤面记录</strong>
+							</div>
+							<el-tag round>{{ soupHistory.length }}</el-tag>
+						</div>
+						<div class="soup-history-list">
+							<article
+								v-for="item in soupHistory"
+								:key="item.id"
+								class="soup-history-item"
+							>
+								<div>
+									<strong>{{ item.title }}</strong>
+									<span>主持人：{{ item.host?.displayName ?? room?.host.displayName ?? '未知' }}</span>
+								</div>
+								<div class="soup-history-meta">
+									<time>{{ formatTime(item.startedAt) }}</time>
+								</div>
+								<p>{{ item.surface }}</p>
+								<div class="soup-history-rating">
+									<el-rate
+										:model-value="item.ratingAverage || 0"
+										disabled
+										allow-half
+									/>
+									<small
+										>{{
+											item.ratingCount
+												? `${item.ratingAverage} 分 / ${item.ratingCount} 人`
+												: item.revealedAt
+													? '暂无评分'
+													: '进行中'
+										}}</small
+									>
+								</div>
+							</article>
 						</div>
 					</section>
 				</aside>
@@ -2560,6 +2659,23 @@ function formatTime(time: string) {
 					<div class="answer-reveal">
 						<span>汤底</span>
 						<p>{{ settlement.answer }}</p>
+					</div>
+					<div class="rating-panel">
+						<div>
+							<strong>本局汤面评分</strong>
+							<span v-if="currentSoupRating?.ratingCount"
+								>{{ currentSoupRating.ratingAverage }} 分 ·
+								{{ currentSoupRating.ratingCount }} 人评分</span
+							><span v-else>等待玩家评分</span>
+						</div>
+						<el-rate
+							v-if="canRateCurrentSoup"
+							:model-value="mySoupRating"
+							@change="(value: number) => rateCurrentSoup(value)"
+						/>
+						<p v-else>
+							{{ canHost ? '主持人不能参与评分' : '玩家可在揭秘后评分' }}
+						</p>
 					</div>
 					<div class="rank-list">
 						<div
