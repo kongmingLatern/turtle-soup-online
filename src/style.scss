@@ -113,6 +113,10 @@ textarea {
   gap: 10px;
 }
 
+.auth-inline {
+  gap: 20px !important;
+}
+
 .surface-card {
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -501,7 +505,7 @@ textarea {
     linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 48%),
     color-mix(in srgb, var(--surface-strong) 86%, transparent);
 
-  > div {
+  >div {
     display: flex;
     flex-wrap: wrap;
     justify-content: space-between;
@@ -589,7 +593,7 @@ textarea {
   justify-content: flex-end;
   gap: 8px;
 
-  .el-button + .el-button {
+  .el-button+.el-button {
     margin-left: 0;
   }
 }
@@ -1299,7 +1303,7 @@ canvas.readonly {
   }
 
   .config-actions .el-button,
-  .config-actions .el-button + .el-button {
+  .config-actions .el-button+.el-button {
     width: 100%;
     margin-left: 0;
   }
