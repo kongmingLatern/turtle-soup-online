@@ -510,7 +510,9 @@ const activeMusicDataUrl = computed(() =>
 const hasCustomAmbience = computed(() =>
 	Boolean(activeBackgroundImage.value || roomMusicDataUrl.value),
 )
-const soupHistory = computed(() => [...(room.value?.soupHistory ?? [])].reverse())
+const soupHistory = computed(() =>
+	[...(room.value?.soupHistory ?? [])].reverse(),
+)
 const currentSoupRating = computed(() => room.value?.soupHistory?.at(-1))
 const mySoupRating = computed(() =>
 	user.value && room.value?.ratingMap ? room.value.ratingMap[user.value.id] : 0,
@@ -534,12 +536,12 @@ const selectedSoupForSwitch = computed(() =>
 const isSelectedCurrentSoup = computed(() =>
 	Boolean(
 		room.value &&
-			selectedSoupForSwitch.value &&
-			room.value.title === selectedSoupForSwitch.value.title &&
-			sanitizeRichText(room.value.surface) ===
-				sanitizeRichText(selectedSoupForSwitch.value.surface) &&
-			sanitizeRichText(room.value.answer) ===
-				sanitizeRichText(selectedSoupForSwitch.value.answer),
+		selectedSoupForSwitch.value &&
+		room.value.title === selectedSoupForSwitch.value.title &&
+		sanitizeRichText(room.value.surface) ===
+			sanitizeRichText(selectedSoupForSwitch.value.surface) &&
+		sanitizeRichText(room.value.answer) ===
+			sanitizeRichText(selectedSoupForSwitch.value.answer),
 	),
 )
 const soupDrawerDirection = computed(() => (isMobile.value ? 'btt' : 'rtl'))
@@ -1012,7 +1014,12 @@ function connectSocket(code: string) {
 		})
 		socket.on(
 			'room-reset',
-			(event: { roomCode: string; room?: RoomState; message: string; at: string }) => {
+			(event: {
+				roomCode: string
+				room?: RoomState
+				message: string
+				at: string
+			}) => {
 				if (event.roomCode !== room.value?.code) return
 				resetRoundState(event.room)
 				const systemEvent: PresenceEvent = {
@@ -1793,8 +1800,8 @@ function formatTime(time: string) {
 							class="surface-text rich-display"
 							v-html="
 								sanitizeRichText(
-								room?.surface ??
-								'还没有进入房间。登录后可创建房间，或用房间号加入。'
+									room?.surface ??
+										'还没有进入房间。登录后可创建房间，或用房间号加入。',
 								)
 							"
 						/>
@@ -1812,20 +1819,29 @@ function formatTime(time: string) {
 							v-if="!importantQuestions.length"
 							description="主持人还没有标记重要内容"
 						/>
-						<div v-else class="clue-list">
+						<div v-else class="clue-list clue-card-grid">
 							<article
 								v-for="question in importantQuestions"
 								:key="question.id"
 								class="clue-item"
 							>
-								<div class="question-meta">
-									<span>{{ question.author.displayName }}</span
-									><time>{{ formatTime(question.createdAt) }}</time>
+								<div class="clue-card-top">
+									<el-avatar
+										:size="24"
+										:src="question.author.avatarDataUrl"
+										class="clue-avatar"
+										>{{ question.author.displayName.slice(0, 1) }}</el-avatar
+									>
+									<div class="clue-card-author">
+										<strong>{{ question.author.displayName }}</strong
+										><time>{{ formatTime(question.createdAt) }}</time>
+									</div>
 								</div>
-								<p>{{ question.text }}</p>
+								<p class="clue-card-text">{{ question.text }}</p>
 								<el-tag
 									v-if="question.verdict"
-									:type="verdictTypes[question.verdict]"
+									class="clue-verdict-tag"
+									:class="question.verdict"
 									effect="plain"
 									round
 									>{{ verdictLabels[question.verdict] }}</el-tag
@@ -2080,7 +2096,8 @@ function formatTime(time: string) {
 									type="primary"
 									:icon="Plus"
 									:disabled="
-										!user || Boolean(room && (!canHost || isSelectedCurrentSoup))
+										!user ||
+										Boolean(room && (!canHost || isSelectedCurrentSoup))
 									"
 									@click="room ? switchRoomSoup() : createRoom()"
 									>{{ room ? '切换当前题目' : '创建房间' }}</el-button
@@ -2189,7 +2206,10 @@ function formatTime(time: string) {
 							</div>
 						</div>
 					</section>
-					<section v-if="soupHistory.length" class="surface-card soup-history-card">
+					<section
+						v-if="soupHistory.length"
+						class="surface-card soup-history-card"
+					>
 						<div class="section-head compact">
 							<div class="title-with-icon">
 								<Flag /><strong>本房间汤面记录</strong>
@@ -2204,7 +2224,11 @@ function formatTime(time: string) {
 							>
 								<div>
 									<strong>{{ item.title }}</strong>
-									<span>主持人：{{ item.host?.displayName ?? room?.host.displayName ?? '未知' }}</span>
+									<span
+										>主持人：{{
+											item.host?.displayName ?? room?.host.displayName ?? '未知'
+										}}</span
+									>
 								</div>
 								<div class="soup-history-meta">
 									<time>{{ formatTime(item.startedAt) }}</time>
@@ -2219,15 +2243,13 @@ function formatTime(time: string) {
 										disabled
 										allow-half
 									/>
-									<small
-										>{{
-											item.ratingCount
-												? `${item.ratingAverage} 分 / ${item.ratingCount} 人`
-												: item.revealedAt
-													? '暂无评分'
-													: '进行中'
-										}}</small
-									>
+									<small>{{
+										item.ratingCount
+											? `${item.ratingAverage} 分 / ${item.ratingCount} 人`
+											: item.revealedAt
+												? '暂无评分'
+												: '进行中'
+									}}</small>
 								</div>
 							</article>
 						</div>
@@ -2582,8 +2604,9 @@ function formatTime(time: string) {
 							v-model="customSoup.surface"
 							:min-rows="5"
 							placeholder="写下可公开给玩家的汤面"
-							@blur="customSoupFormRef?.validateField('surface')"
-					/></el-form-item
+							@blur="
+								customSoupFormRef?.validateField('surface')
+							" /></el-form-item
 					><el-form-item label="汤底" prop="answer"
 						><RichTextEditor
 							v-model="customSoup.answer"
@@ -2641,11 +2664,8 @@ function formatTime(time: string) {
 							><small
 								>{{ soup.category || '自建' }} ·
 								{{ difficultyLabels[soup.difficulty] }}</small
-							><em
-								class="rich-display"
-								v-html="sanitizeRichText(soup.surface)"
-							/></span
-						>
+							><em class="rich-display" v-html="sanitizeRichText(soup.surface)"
+						/></span>
 						<span class="soup-manage-actions">
 							<el-button
 								round
