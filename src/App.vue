@@ -34,6 +34,8 @@ import {
 	watch,
 } from 'vue'
 import { io, Socket } from 'socket.io-client'
+import RichTextEditor from './components/RichTextEditor.vue'
+import { richTextToPlainText, sanitizeRichText } from './utils/richText'
 
 type Role = 'host' | 'player'
 type Verdict = 'yes' | 'no' | 'both' | 'irrelevant'
@@ -310,6 +312,22 @@ const customSoup = reactive({
 	category: '自建',
 	difficulty: 'medium' as Difficulty,
 })
+
+function richTextLengthValidator(label: string, min: number, max: number) {
+	return (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+		const length = richTextToPlainText(value).trim().length
+		if (!length) {
+			callback(new Error(`请输入${label}`))
+			return
+		}
+		if (length < min || length > max) {
+			callback(new Error(`${label}长度为 ${min}-${max} 个字符`))
+			return
+		}
+		callback()
+	}
+}
+
 const authRules = computed<FormRules<typeof authForm>>(() => ({
 	displayName:
 		authMode.value === 'register'
@@ -343,12 +361,10 @@ const customSoupRules: FormRules<typeof customSoup> = {
 		{ min: 2, max: 60, message: '标题长度为 2-60 个字符', trigger: 'blur' },
 	],
 	surface: [
-		{ required: true, message: '请输入汤面', trigger: 'blur' },
-		{ min: 8, max: 2000, message: '汤面长度为 8-2000 个字符', trigger: 'blur' },
+		{ validator: richTextLengthValidator('汤面', 8, 2000), trigger: 'blur' },
 	],
 	answer: [
-		{ required: true, message: '请输入汤底', trigger: 'blur' },
-		{ min: 8, max: 4000, message: '汤底长度为 8-4000 个字符', trigger: 'blur' },
+		{ validator: richTextLengthValidator('汤底', 8, 4000), trigger: 'blur' },
 	],
 	category: [
 		{ required: true, message: '请输入分类', trigger: 'blur' },
@@ -520,8 +536,10 @@ const isSelectedCurrentSoup = computed(() =>
 		room.value &&
 			selectedSoupForSwitch.value &&
 			room.value.title === selectedSoupForSwitch.value.title &&
-			room.value.surface === selectedSoupForSwitch.value.surface &&
-			room.value.answer === selectedSoupForSwitch.value.answer,
+			sanitizeRichText(room.value.surface) ===
+				sanitizeRichText(selectedSoupForSwitch.value.surface) &&
+			sanitizeRichText(room.value.answer) ===
+				sanitizeRichText(selectedSoupForSwitch.value.answer),
 	),
 )
 const soupDrawerDirection = computed(() => (isMobile.value ? 'btt' : 'rtl'))
@@ -705,12 +723,17 @@ async function createCustomSoup() {
 	if (!valid) return
 	creatingSoup.value = true
 	const isEditing = Boolean(editingSoupId.value)
+	const payload = {
+		...customSoup,
+		surface: sanitizeRichText(customSoup.surface),
+		answer: sanitizeRichText(customSoup.answer),
+	}
 	try {
 		const soup = await request<Soup>(
 			isEditing ? `/soups/${editingSoupId.value}` : '/soups',
 			{
 				method: isEditing ? 'PATCH' : 'POST',
-				body: JSON.stringify(customSoup),
+				body: JSON.stringify(payload),
 			},
 		)
 		const index = soups.value.findIndex(item => item.id === soup.id)
@@ -851,7 +874,9 @@ function applyRoom(data: RoomState) {
 
 function syncSelectedSoupFromRoom(data: RoomState) {
 	const matched = soups.value.find(
-		soup => soup.title === data.title && soup.surface === data.surface,
+		soup =>
+			soup.title === data.title &&
+			sanitizeRichText(soup.surface) === sanitizeRichText(data.surface),
 	)
 	if (matched) selectedSoupId.value = matched.id
 }
@@ -1125,11 +1150,15 @@ function queueRoomSave() {
 async function saveRoom() {
 	if (!canHost.value || !room.value) return
 	savingRoom.value = true
+	const safeSurface = sanitizeRichText(room.value.surface)
+	const safeAnswer = sanitizeRichText(room.value.answer)
+	if (room.value.surface !== safeSurface) room.value.surface = safeSurface
+	if (room.value.answer !== safeAnswer) room.value.answer = safeAnswer
 	const nextAmbience = { ...ambienceDraft, musicVolume: ambienceVolume.value }
 	const basePayload = {
 		title: room.value.title,
-		surface: room.value.surface,
-		answer: room.value.answer,
+		surface: safeSurface,
+		answer: safeAnswer,
 		canvasDataUrl: room.value.canvasDataUrl,
 		solved: room.value.solved,
 	}
@@ -1752,20 +1781,23 @@ function formatTime(time: string) {
 								canHost ? '主持人' : '玩家'
 							}}</el-tag>
 						</div>
-						<el-input
+						<RichTextEditor
 							v-if="canHost && room"
 							v-model="room.surface"
-							type="textarea"
-							:autosize="{ minRows: 7, maxRows: 12 }"
+							:min-rows="8"
 							placeholder="写下可公开给玩家的汤面"
 							@input="queueRoomSave"
 						/>
-						<p v-else class="surface-text">
-							{{
+						<p
+							v-else
+							class="surface-text rich-display"
+							v-html="
+								sanitizeRichText(
 								room?.surface ??
 								'还没有进入房间。登录后可创建房间，或用房间号加入。'
-							}}
-						</p>
+								)
+							"
+						/>
 					</section>
 					<section class="surface-card clue-card">
 						<div class="section-head compact">
@@ -2177,7 +2209,10 @@ function formatTime(time: string) {
 								<div class="soup-history-meta">
 									<time>{{ formatTime(item.startedAt) }}</time>
 								</div>
-								<p>{{ item.surface }}</p>
+								<p
+									class="rich-display"
+									v-html="sanitizeRichText(item.surface)"
+								/>
 								<div class="soup-history-rating">
 									<el-rate
 										:model-value="item.ratingAverage || 0"
@@ -2481,11 +2516,10 @@ function formatTime(time: string) {
 					>
 						{{ room.revealed ? '已揭秘' : '揭秘汤底并结算积分' }}
 					</el-button>
-					<el-input
+					<RichTextEditor
 						v-if="canHost && room"
 						v-model="room.answer"
-						type="textarea"
-						:autosize="{ minRows: 8, maxRows: 14 }"
+						:min-rows="9"
 						placeholder="只有主持人需要知道的汤底"
 						@input="queueRoomSave"
 					/>
@@ -2493,7 +2527,11 @@ function formatTime(time: string) {
 						<CircleClose />
 						<span>汤底已隐藏</span>
 					</div>
-					<p v-else class="answer-text">{{ room?.answer ?? '暂无汤底' }}</p>
+					<p
+						v-else
+						class="answer-text rich-display"
+						v-html="sanitizeRichText(room?.answer ?? '暂无汤底')"
+					/>
 				</div>
 
 				<div v-show="activePanel === 'canvas'" class="tool-panel">
@@ -2540,15 +2578,18 @@ function formatTime(time: string) {
 					><el-form-item label="标题" prop="title"
 						><el-input v-model="customSoup.title" /></el-form-item
 					><el-form-item label="汤面" prop="surface"
-						><el-input
+						><RichTextEditor
 							v-model="customSoup.surface"
-							type="textarea"
-							:autosize="{ minRows: 4 }" /></el-form-item
+							:min-rows="5"
+							placeholder="写下可公开给玩家的汤面"
+							@blur="customSoupFormRef?.validateField('surface')"
+					/></el-form-item
 					><el-form-item label="汤底" prop="answer"
-						><el-input
+						><RichTextEditor
 							v-model="customSoup.answer"
-							type="textarea"
-							:autosize="{ minRows: 5 }"
+							:min-rows="6"
+							placeholder="写下最终真相、关键线索和解释"
+							@blur="customSoupFormRef?.validateField('answer')"
 					/></el-form-item>
 					<div class="dialog-grid">
 						<el-form-item label="分类" prop="category"
@@ -2600,7 +2641,10 @@ function formatTime(time: string) {
 							><small
 								>{{ soup.category || '自建' }} ·
 								{{ difficultyLabels[soup.difficulty] }}</small
-							><em>{{ soup.surface }}</em></span
+							><em
+								class="rich-display"
+								v-html="sanitizeRichText(soup.surface)"
+							/></span
 						>
 						<span class="soup-manage-actions">
 							<el-button
@@ -2658,7 +2702,10 @@ function formatTime(time: string) {
 				><div v-if="settlement" class="settlement-board">
 					<div class="answer-reveal">
 						<span>汤底</span>
-						<p>{{ settlement.answer }}</p>
+						<p
+							class="rich-display"
+							v-html="sanitizeRichText(settlement.answer)"
+						/>
 					</div>
 					<div class="rating-panel">
 						<div>

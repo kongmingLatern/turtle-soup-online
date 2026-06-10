@@ -151,6 +151,7 @@ textarea {
 }
 
 .surface-card {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -269,10 +270,15 @@ textarea {
   align-items: start;
 }
 
+.desk-grid>* {
+  min-width: 0;
+}
+
 .story-column,
 .control-column {
   display: grid;
   gap: 16px;
+  min-width: 0;
 }
 
 .qa-column,
@@ -326,6 +332,242 @@ textarea {
   font-size: 17px;
   line-height: 1.8;
   white-space: pre-wrap;
+}
+
+.rich-display {
+  white-space: normal;
+}
+
+.rich-display :where(p, div) {
+  margin: 0 0 8px;
+}
+
+.rich-display :where(p:last-child, div:last-child) {
+  margin-bottom: 0;
+}
+
+.rich-display :where(strong, b) {
+  font-weight: 800;
+}
+
+.rich-display :where(h3, h4) {
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+
+.rich-display h3 {
+  font-size: 1.15em;
+}
+
+.rich-display h4 {
+  font-size: 1.02em;
+  color: var(--accent);
+}
+
+.rich-display :where(ul, ol) {
+  margin: 0 0 8px;
+  padding-left: 1.35em;
+}
+
+.rich-display blockquote {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.rich-editor {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-strong) 86%, transparent);
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.rich-editor:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.rich-editor.disabled {
+  opacity: 0.7;
+}
+
+.rich-editor-toolbar {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--surface-strong) 72%, transparent);
+  overflow: hidden;
+}
+
+.rich-block-select {
+  width: 108px;
+  flex: 0 0 108px;
+}
+
+.rich-tool-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface-strong) 64%, transparent);
+}
+
+.rich-tool-button {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.rich-tool-button:hover,
+.rich-tool-button.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.rich-tool-button:active {
+  transform: translateY(1px);
+}
+
+.rich-tool-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.rich-tool-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.rich-tool-button.text {
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.rich-tool-button.italic {
+  font-style: italic;
+}
+
+.rich-tool-button.underline {
+  text-decoration: underline;
+}
+
+.rich-color-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.rich-color-group.highlight {
+  padding-left: 8px;
+  border-left: 1px solid var(--line);
+}
+
+.rich-color-swatch {
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 2px solid color-mix(in srgb, var(--surface-strong) 80%, transparent);
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px var(--line);
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.rich-color-swatch:hover,
+.rich-color-swatch.active {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 64%, transparent),
+    0 8px 16px rgba(0, 0, 0, 0.12);
+}
+
+.rich-color-swatch:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.rich-editor-content {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding: 14px;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.75;
+  outline: none;
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.rich-editor-content:empty::before {
+  color: var(--muted);
+  content: attr(data-placeholder);
+  pointer-events: none;
+}
+
+.rich-editor-content :where(p, div) {
+  margin: 0 0 8px;
+}
+
+.rich-editor-content :where(p:last-child, div:last-child) {
+  margin-bottom: 0;
+}
+
+.rich-editor-content :where(h3, h4) {
+  margin: 0 0 8px;
+  line-height: 1.35;
+}
+
+.rich-editor-content h3 {
+  font-size: 18px;
+}
+
+.rich-editor-content h4 {
+  font-size: 16px;
+  color: var(--accent);
+}
+
+.rich-editor-content :where(ul, ol) {
+  margin: 0 0 8px;
+  padding-left: 1.4em;
+}
+
+.rich-editor-content blockquote {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
 }
 
 .clue-list,
@@ -511,7 +753,7 @@ textarea {
   transform: translateY(-1px);
 }
 
-.preset-chip > span {
+.preset-chip>span {
   grid-row: 1 / span 2;
   width: 28px;
   height: 28px;
@@ -735,7 +977,7 @@ textarea {
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-strong) 78%, transparent);
 
-  > div:first-child,
+  >div:first-child,
   .soup-history-rating {
     display: flex;
     flex-wrap: wrap;
@@ -1195,7 +1437,7 @@ canvas.readonly {
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-strong) 78%, transparent);
 
-  > div {
+  >div {
     display: grid;
     gap: 4px;
   }
@@ -1340,7 +1582,7 @@ canvas.readonly {
     width: 100%;
   }
 
-  .header-actions .el-button + .el-button {
+  .header-actions .el-button+.el-button {
     margin-left: 0;
   }
 
@@ -1533,6 +1775,47 @@ canvas.readonly {
   .answer-text {
     font-size: 15px;
     line-height: 1.72;
+  }
+
+  .rich-editor {
+    border-radius: 8px;
+  }
+
+  .rich-editor-toolbar {
+    gap: 6px;
+    padding: 7px;
+    overflow: hidden;
+  }
+
+  .rich-block-select {
+    width: 96px;
+    flex-basis: 96px;
+  }
+
+  .rich-tool-group {
+    gap: 3px;
+    padding: 2px;
+    border-radius: 8px;
+  }
+
+  .rich-tool-button {
+    width: 29px;
+    height: 29px;
+  }
+
+  .rich-color-group {
+    gap: 5px;
+  }
+
+  .rich-color-swatch {
+    width: 22px;
+    height: 22px;
+  }
+
+  .rich-editor-content {
+    padding: 12px;
+    font-size: 14px;
+    line-height: 1.68;
   }
 
   .qa-column {
