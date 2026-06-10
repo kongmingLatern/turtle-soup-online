@@ -40,6 +40,7 @@ const highlightColor = ref('#fef3c7')
 const activeMarks = ref<Record<string, boolean>>({})
 const activeBlock = ref('P')
 const syncingFromModel = ref(false)
+const savedRange = ref<Range | null>(null)
 
 const textColors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#111827']
 const highlightColors = ['#fef3c7', '#dcfce7', '#dbeafe', '#ede9fe', '#fee2e2']
@@ -84,6 +85,30 @@ function focusEditor() {
 	editorRef.value?.focus()
 }
 
+function selectionInsideEditor() {
+	const editor = editorRef.value
+	const selection = document.getSelection()
+	if (!editor || !selection?.anchorNode || selection.rangeCount === 0) return false
+	return editor.contains(selection.anchorNode)
+}
+
+function saveSelection() {
+	if (!selectionInsideEditor()) return
+	const selection = document.getSelection()
+	if (!selection || selection.rangeCount === 0) return
+	savedRange.value = selection.getRangeAt(0).cloneRange()
+}
+
+function restoreSelection() {
+	const editor = editorRef.value
+	const range = savedRange.value
+	if (!editor || !range) return
+	const selection = document.getSelection()
+	if (!selection) return
+	selection.removeAllRanges()
+	selection.addRange(range)
+}
+
 function emitValue() {
 	if (syncingFromModel.value) return
 	const editor = editorRef.value
@@ -98,15 +123,23 @@ function emitValue() {
 function runCommand(command: EditorCommand, value?: string) {
 	if (props.disabled) return
 	focusEditor()
+	restoreSelection()
 	document.execCommand(command, false, value)
-	nextTick(emitValue)
+	nextTick(() => {
+		emitValue()
+		saveSelection()
+	})
 }
 
 function setBlock(block: string) {
 	if (props.disabled) return
 	focusEditor()
+	restoreSelection()
 	document.execCommand('formatBlock', false, block.toLowerCase())
-	nextTick(emitValue)
+	nextTick(() => {
+		emitValue()
+		saveSelection()
+	})
 }
 
 function applyColor(nextColor: string) {
@@ -146,6 +179,7 @@ function refreshToolbarState() {
 	const editor = editorRef.value
 	const selection = document.getSelection()
 	if (!editor || !selection?.anchorNode || !editor.contains(selection.anchorNode)) return
+	saveSelection()
 	activeMarks.value = {
 		bold: document.queryCommandState('bold'),
 		italic: document.queryCommandState('italic'),
@@ -201,6 +235,7 @@ function escapeHtml(value: string) {
 						type="button"
 						class="rich-tool-button icon"
 						:disabled="disabled"
+						@mousedown.prevent
 						@click="runCommand('undo')"
 					>
 						<RefreshLeft />
@@ -211,6 +246,7 @@ function escapeHtml(value: string) {
 						type="button"
 						class="rich-tool-button icon"
 						:disabled="disabled"
+						@mousedown.prevent
 						@click="runCommand('redo')"
 					>
 						<RefreshRight />
@@ -224,6 +260,7 @@ function escapeHtml(value: string) {
 					class="rich-tool-button text"
 					:class="{ active: activeMarks.bold }"
 					:disabled="disabled"
+					@mousedown.prevent
 					@click="runCommand('bold')"
 				>
 					B
@@ -233,6 +270,7 @@ function escapeHtml(value: string) {
 					class="rich-tool-button text italic"
 					:class="{ active: activeMarks.italic }"
 					:disabled="disabled"
+					@mousedown.prevent
 					@click="runCommand('italic')"
 				>
 					I
@@ -242,6 +280,7 @@ function escapeHtml(value: string) {
 					class="rich-tool-button text underline"
 					:class="{ active: activeMarks.underline }"
 					:disabled="disabled"
+					@mousedown.prevent
 					@click="runCommand('underline')"
 				>
 					U
@@ -254,6 +293,7 @@ function escapeHtml(value: string) {
 					class="rich-tool-button text"
 					:class="{ active: activeMarks.insertUnorderedList }"
 					:disabled="disabled"
+					@mousedown.prevent
 					@click="runCommand('insertUnorderedList')"
 				>
 					•
@@ -263,6 +303,7 @@ function escapeHtml(value: string) {
 					class="rich-tool-button text"
 					:class="{ active: activeMarks.insertOrderedList }"
 					:disabled="disabled"
+					@mousedown.prevent
 					@click="runCommand('insertOrderedList')"
 				>
 					1.
@@ -282,6 +323,7 @@ function escapeHtml(value: string) {
 						:class="{ active: color === item }"
 						:style="{ backgroundColor: item }"
 						:disabled="disabled"
+						@mousedown.prevent
 						@click="applyColor(item)"
 					/>
 				</el-tooltip>
@@ -311,6 +353,7 @@ function escapeHtml(value: string) {
 						:class="{ active: highlightColor === item }"
 						:style="{ backgroundColor: item }"
 						:disabled="disabled"
+						@mousedown.prevent
 						@click="applyHighlight(item)"
 					/>
 				</el-tooltip>
@@ -333,6 +376,7 @@ function escapeHtml(value: string) {
 						type="button"
 						class="rich-tool-button icon"
 						:disabled="disabled"
+						@mousedown.prevent
 						@click="applyColor(color)"
 					>
 						<Brush />
@@ -343,6 +387,7 @@ function escapeHtml(value: string) {
 						type="button"
 						class="rich-tool-button icon"
 						:disabled="disabled"
+						@mousedown.prevent
 						@click="runCommand('removeFormat')"
 					>
 						<CloseBold />
