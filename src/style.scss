@@ -516,6 +516,27 @@ textarea {
   opacity: 0.55;
 }
 
+.rich-color-picker {
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+}
+
+.rich-color-picker .el-color-picker__trigger {
+  width: 26px;
+  height: 26px;
+  padding: 2px;
+  border-radius: 999px;
+}
+
+.rich-color-picker .el-color-picker__color {
+  border-radius: 999px;
+}
+
+.rich-color-picker .el-color-picker__color-inner {
+  border-radius: 999px;
+}
+
 .rich-editor-content {
   width: 100%;
   max-width: 100%;
@@ -793,14 +814,28 @@ textarea {
 .question-meta {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.question-meta .el-avatar {
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
 }
 
 .question-meta span {
   color: var(--accent);
   font-weight: 900;
+}
+
+.host-author-tag {
+  border: 0;
+  background: color-mix(in srgb, #d7003d 88%, var(--accent));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+  box-shadow: 0 4px 12px rgba(2, 6, 23, 0.18);
 }
 
 .verdict-zone {
@@ -1627,6 +1662,143 @@ canvas.readonly {
   gap: 6px;
 }
 
+.mvp-select-board,
+.mvp-result-board {
+  display: grid;
+  gap: 14px;
+}
+
+.mvp-copy {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.mvp-candidate-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.mvp-candidate-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 78%, transparent);
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.mvp-candidate-card.active,
+.mvp-candidate-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 56%, var(--line));
+  background: color-mix(in srgb, var(--surface-strong) 84%, var(--accent) 8%);
+}
+
+.mvp-candidate-card .el-radio {
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+
+.mvp-candidate-card .el-radio__label {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 9px;
+  align-items: center;
+  padding-left: 8px;
+}
+
+.mvp-candidate-card .el-radio__label>span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.mvp-candidate-card strong,
+.mvp-candidate-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mvp-candidate-card strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.mvp-candidate-card small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.mvp-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--gold) 34%, var(--line));
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 0 0, color-mix(in srgb, var(--gold) 18%, transparent), transparent 12rem),
+    color-mix(in srgb, var(--surface-strong) 80%, transparent);
+}
+
+.mvp-hero span {
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.mvp-hero strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 26px;
+  line-height: 1.15;
+}
+
+.mvp-hero p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.mvp-clues-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.mvp-clue-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.mvp-clue-card {
+  position: relative;
+  min-height: 118px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 12px 12px 40px;
+  border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 74%, transparent);
+}
+
+.mvp-clue-card p {
+  margin: 0;
+  color: var(--text);
+  line-height: 1.58;
+  overflow-wrap: anywhere;
+}
+
 .el-input__wrapper,
 .el-textarea__inner,
 .el-button {
@@ -1700,7 +1872,7 @@ canvas.readonly {
     top: 0;
     z-index: 24;
     gap: 12px;
-    margin: -14px -10px 12px;
+    // margin: -14px -10px 12px;
     padding: calc(12px + env(safe-area-inset-top)) 10px 11px;
     border-bottom: 1px solid var(--line);
     background: color-mix(in srgb, var(--bg) 86%, transparent);
@@ -1957,6 +2129,12 @@ canvas.readonly {
   .rich-color-swatch {
     width: 22px;
     height: 22px;
+  }
+
+  .rich-color-picker,
+  .rich-color-picker .el-color-picker__trigger {
+    width: 24px;
+    height: 24px;
   }
 
   .rich-editor-content {

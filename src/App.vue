@@ -108,6 +108,7 @@ interface RoomState {
 	solved: boolean
 	revealed: boolean
 	settlement?: Settlement
+	mvp?: MvpResult | null
 	soupHistory?: SoupHistoryItem[] | null
 	ratingMap?: Record<string, number> | null
 	host: AuthUser
@@ -171,6 +172,26 @@ interface Settlement {
 	revealedAt: string
 	answer: string
 	entries: SettlementEntry[]
+}
+
+interface MvpQuestion {
+	id: string
+	text: string
+	verdict?: Verdict | null
+	important: boolean
+	author: {
+		id: string
+		username: string
+		displayName: string
+		avatarDataUrl?: string
+	}
+	createdAt: string
+}
+
+interface MvpResult {
+	selectedAt: string
+	user: AuthUser
+	importantQuestions: MvpQuestion[]
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
@@ -299,6 +320,11 @@ const memberDialogOpen = ref(false)
 const selectedMember = ref<MemberStats | null>(null)
 const settlementDialogOpen = ref(false)
 const settlement = ref<Settlement | null>(null)
+const mvpSelectDialogOpen = ref(false)
+const mvpResultDialogOpen = ref(false)
+const selectedMvpUserId = ref('')
+const mvpSubmitting = ref(false)
+const mvpResult = ref<MvpResult | null>(null)
 const customSoupOpen = ref(false)
 const soupManagerOpen = ref(false)
 const editingSoupId = ref('')
@@ -473,6 +499,25 @@ const liveLeaderboard = computed(() => {
 					: index + 1,
 		}))
 })
+const mvpCandidates = computed(() => {
+	const hostId = room.value?.host.id
+	return (settlement.value?.entries ?? [])
+		.filter(entry => entry.user.id !== hostId)
+		.map(entry => entry.user)
+})
+const mvpImportantQuestions = computed<Question[]>(() =>
+	[...(room.value?.questions ?? [])]
+		.filter(
+			question =>
+				question.important &&
+				(!selectedMvpUserId.value ||
+					question.author.id === selectedMvpUserId.value),
+		)
+		.sort(
+			(a, b) =>
+				new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+		),
+)
 const onlineHint = computed(() =>
 	room.value
 		? `当前状态：${socketStatus.value}`
@@ -861,6 +906,7 @@ async function joinRoom(code = roomCodeInput.value, showMessage = true) {
 
 function applyRoom(data: RoomState) {
 	room.value = data
+	mvpResult.value = data.mvp ?? null
 	roomCodeInput.value = data.code
 	useHostBackground.value =
 		localStorage.getItem(STORAGE_USE_HOST_BACKGROUND_PREFIX + data.code) !== '0'
@@ -889,6 +935,10 @@ function resetRoundState(nextRoom?: RoomState) {
 	questionText.value = ''
 	settlement.value = null
 	settlementDialogOpen.value = false
+	mvpSelectDialogOpen.value = false
+	mvpResultDialogOpen.value = false
+	selectedMvpUserId.value = ''
+	mvpResult.value = null
 	selectedQuestionId.value = ''
 	answerHidden.value = true
 	nextTick(() => restoreCanvas(''))
@@ -1010,6 +1060,7 @@ function connectSocket(code: string) {
 			syncAmbienceFromRoom(nextRoom)
 			syncSelectedSoupFromRoom(nextRoom)
 			if (nextRoom.settlement) settlement.value = nextRoom.settlement
+			if (nextRoom.mvp) mvpResult.value = nextRoom.mvp
 			nextTick(() => restoreCanvas())
 		})
 		socket.on(
@@ -1068,6 +1119,12 @@ function connectSocket(code: string) {
 				room.value.solved = true
 				room.value.settlement = nextSettlement
 			}
+		})
+		socket.on('room-mvp-selected', (nextMvp: MvpResult) => {
+			mvpResult.value = nextMvp
+			if (room.value) room.value.mvp = nextMvp
+			mvpSelectDialogOpen.value = false
+			mvpResultDialogOpen.value = true
 		})
 		socket.on('room-members', (members: RoomMember[]) => {
 			roomMembers.value = members
@@ -1340,6 +1397,40 @@ async function revealAnswer() {
 	)
 	settlementDialogOpen.value = true
 	await joinRoom(room.value.code, false)
+}
+
+function handleSettlementClosed() {
+	if (!canHost.value || !room.value?.revealed || room.value.mvp) return
+	if (!settlement.value?.entries.length) return
+	if (!mvpCandidates.value.length) {
+		ElMessage.info('本轮暂无可评定 MVP 的玩家')
+		return
+	}
+	selectedMvpUserId.value = mvpCandidates.value[0]?.id ?? ''
+	mvpSelectDialogOpen.value = true
+}
+
+async function submitMvpSelection() {
+	if (!room.value || !selectedMvpUserId.value) {
+		ElMessage.warning('请选择一位 MVP 玩家')
+		return
+	}
+	mvpSubmitting.value = true
+	try {
+		const data = await request<MvpResult>(`/rooms/${room.value.code}/mvp`, {
+			method: 'POST',
+			body: JSON.stringify({ userId: selectedMvpUserId.value }),
+		})
+		mvpResult.value = data
+		room.value.mvp = data
+		mvpSelectDialogOpen.value = false
+		mvpResultDialogOpen.value = true
+		ElMessage.success('本轮 MVP 已公布')
+	} catch (error) {
+		ElMessage.error(error instanceof Error ? error.message : '评定 MVP 失败')
+	} finally {
+		mvpSubmitting.value = false
+	}
 }
 
 async function rateCurrentSoup(rating: number) {
@@ -1894,8 +1985,20 @@ function formatTime(time: string) {
 						>
 							<div class="question-main">
 								<div class="question-meta">
+									<el-avatar :size="24" :src="question.author.avatarDataUrl">{{
+										question.author.displayName.slice(0, 1)
+									}}</el-avatar>
 									<span>{{ question.author.displayName }}</span
-									><time>{{ formatTime(question.createdAt) }}</time>
+									><el-tag
+										v-if="question.author.id === room?.host.id"
+										class="host-author-tag"
+										style="background: #ff7f50; border: none"
+										effect="dark"
+										round
+									>
+										<span style="color: white">主持人</span></el-tag
+									>
+									<time>{{ formatTime(question.createdAt) }}</time>
 								</div>
 								<p>{{ question.text }}</p>
 							</div>
@@ -2694,31 +2797,42 @@ function formatTime(time: string) {
 					v-if="!selectedMember?.importantQuestions.length"
 					description="这个用户暂无重要内容"
 				/>
-				<div v-else class="member-clues">
-					<div
+				<div v-else class="member-clues clue-card-grid">
+					<article
 						v-for="question in selectedMember.importantQuestions"
 						:key="question.id"
 						class="clue-item"
 					>
-						<div class="question-meta">
-							<span>{{ selectedMember.displayName }}</span
-							><time>{{ formatTime(question.createdAt) }}</time>
+						<div class="clue-card-top">
+							<el-avatar
+								:size="24"
+								:src="selectedMember.avatarDataUrl"
+								class="clue-avatar"
+								>{{ selectedMember.displayName.slice(0, 1) }}</el-avatar
+							>
+							<div class="clue-card-author">
+								<strong>{{ selectedMember.displayName }}</strong
+								><time>{{ formatTime(question.createdAt) }}</time>
+							</div>
 						</div>
-						<p>{{ question.text }}</p>
+						<p class="clue-card-text">{{ question.text }}</p>
 						<el-tag
 							v-if="question.verdict"
+							class="clue-verdict-tag"
+							:class="question.verdict"
 							:type="verdictTypes[question.verdict]"
 							effect="plain"
 							round
 							>{{ verdictLabels[question.verdict] }}</el-tag
 						>
-					</div>
+					</article>
 				</div></el-dialog
 			>
 			<el-dialog
 				v-model="settlementDialogOpen"
 				title="本局积分排行榜"
 				width="min(820px, 94vw)"
+				@closed="handleSettlementClosed"
 				><div v-if="settlement" class="settlement-board">
 					<div class="answer-reveal">
 						<span>汤底</span>
@@ -2775,6 +2889,144 @@ function formatTime(time: string) {
 					</div>
 				</div></el-dialog
 			>
+			<el-dialog
+				v-model="mvpSelectDialogOpen"
+				title="评定本轮 MVP"
+				width="min(760px, 94vw)"
+				:close-on-click-modal="false"
+				:close-on-press-escape="false"
+				:show-close="false"
+			>
+				<div class="mvp-select-board">
+					<p class="mvp-copy">
+						选择一位本轮 MVP。主持人不可被选择，提交后会立即向房间内玩家公布。
+					</p>
+					<el-radio-group
+						v-model="selectedMvpUserId"
+						class="mvp-candidate-grid"
+					>
+						<label
+							v-for="candidate in mvpCandidates"
+							:key="candidate.id"
+							class="mvp-candidate-card"
+							:class="{ active: selectedMvpUserId === candidate.id }"
+						>
+							<el-radio :label="candidate.id">
+								<el-avatar :size="38" :src="candidate.avatarDataUrl">{{
+									candidate.displayName.slice(0, 1)
+								}}</el-avatar>
+								<span>
+									<strong>{{ candidate.displayName }}</strong>
+									<small
+										>{{ candidate.rankTitle }} ·
+										{{ candidate.points }} 分</small
+									>
+								</span>
+							</el-radio>
+						</label>
+					</el-radio-group>
+					<section class="mvp-clues-panel">
+						<div class="section-head compact">
+							<div class="title-with-icon">
+								<Flag /><strong>本轮重要线索</strong>
+							</div>
+							<el-tag round>{{ mvpImportantQuestions.length }}</el-tag>
+						</div>
+						<el-empty
+							v-if="!mvpImportantQuestions.length"
+							description="本轮暂无重要线索"
+							:image-size="54"
+						/>
+						<div v-else class="mvp-clue-list">
+							<article
+								v-for="question in mvpImportantQuestions"
+								:key="question.id"
+								class="mvp-clue-card"
+							>
+								<div class="question-meta">
+									<span>{{ question.author.displayName }}</span>
+									<time>{{ formatTime(question.createdAt) }}</time>
+								</div>
+								<p>{{ question.text }}</p>
+								<el-tag
+									v-if="question.verdict"
+									class="clue-verdict-tag"
+									:class="question.verdict"
+									:type="verdictTypes[question.verdict]"
+									effect="plain"
+									round
+									>{{ verdictLabels[question.verdict] }}</el-tag
+								>
+							</article>
+						</div>
+					</section>
+				</div>
+				<template #footer>
+					<el-button
+						type="primary"
+						:loading="mvpSubmitting"
+						:disabled="!selectedMvpUserId"
+						@click="submitMvpSelection"
+						>公布 MVP</el-button
+					>
+				</template>
+			</el-dialog>
+			<el-dialog
+				v-model="mvpResultDialogOpen"
+				title="本轮 MVP"
+				width="min(780px, 94vw)"
+			>
+				<div v-if="mvpResult" class="mvp-result-board">
+					<section class="mvp-hero">
+						<el-avatar :size="64" :src="mvpResult.user.avatarDataUrl">{{
+							mvpResult.user.displayName.slice(0, 1)
+						}}</el-avatar>
+						<div>
+							<span>本轮 MVP</span>
+							<strong>{{ mvpResult.user.displayName }}</strong>
+							<p>
+								{{ mvpResult.user.rankTitle }} · 累计
+								{{ mvpResult.user.points }} 分
+							</p>
+						</div>
+					</section>
+					<section class="mvp-clues-panel">
+						<div class="section-head compact">
+							<div class="title-with-icon">
+								<Flag /><strong>本轮重要线索</strong>
+							</div>
+							<el-tag round>{{ mvpResult.importantQuestions.length }}</el-tag>
+						</div>
+						<el-empty
+							v-if="!mvpResult.importantQuestions.length"
+							description="本轮暂无重要线索"
+							:image-size="54"
+						/>
+						<div v-else class="mvp-clue-list">
+							<article
+								v-for="question in mvpResult.importantQuestions"
+								:key="question.id"
+								class="mvp-clue-card"
+							>
+								<div class="question-meta">
+									<span>{{ question.author.displayName }}</span>
+									<time>{{ formatTime(question.createdAt) }}</time>
+								</div>
+								<p>{{ question.text }}</p>
+								<el-tag
+									v-if="question.verdict"
+									class="clue-verdict-tag"
+									:class="question.verdict"
+									:type="verdictTypes[question.verdict]"
+									effect="plain"
+									round
+									>{{ verdictLabels[question.verdict] }}</el-tag
+								>
+							</article>
+						</div>
+					</section>
+				</div>
+			</el-dialog>
 		</main>
 	</el-config-provider>
 </template>

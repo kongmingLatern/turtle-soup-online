@@ -110,13 +110,23 @@ function setBlock(block: string) {
 }
 
 function applyColor(nextColor: string) {
+	if (!nextColor) return
 	color.value = nextColor
 	runCommand('foreColor', nextColor)
 }
 
 function applyHighlight(nextColor: string) {
+	if (!nextColor) return
 	highlightColor.value = nextColor
 	runCommand('backColor', nextColor)
+}
+
+function handleCustomColor(nextColor: string | null) {
+	applyColor(nextColor || color.value)
+}
+
+function handleCustomHighlight(nextColor: string | null) {
+	applyHighlight(nextColor || highlightColor.value)
 }
 
 function handlePaste(event: ClipboardEvent) {
@@ -275,6 +285,17 @@ function escapeHtml(value: string) {
 						@click="applyColor(item)"
 					/>
 				</el-tooltip>
+				<el-tooltip content="自定义文字颜色" placement="top">
+					<el-color-picker
+						v-model="color"
+						class="rich-color-picker"
+						:predefine="textColors"
+						show-alpha
+						size="small"
+						:disabled="disabled"
+						@change="handleCustomColor"
+					/>
+				</el-tooltip>
 			</div>
 
 			<div class="rich-color-group highlight" aria-label="高亮颜色">
@@ -291,6 +312,17 @@ function escapeHtml(value: string) {
 						:style="{ backgroundColor: item }"
 						:disabled="disabled"
 						@click="applyHighlight(item)"
+					/>
+				</el-tooltip>
+				<el-tooltip content="自定义高亮颜色" placement="top">
+					<el-color-picker
+						v-model="highlightColor"
+						class="rich-color-picker"
+						:predefine="highlightColors"
+						show-alpha
+						size="small"
+						:disabled="disabled"
+						@change="handleCustomHighlight"
 					/>
 				</el-tooltip>
 			</div>
