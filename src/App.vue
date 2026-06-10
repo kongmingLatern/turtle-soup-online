@@ -127,7 +127,7 @@ interface SoupHistoryItem {
 		displayName: string
 		avatarDataUrl?: string
 	}
-	mvp?: AuthUser | null
+	mvp?: MvpResult | AuthUser | null
 	startedAt: string
 	revealedAt?: string
 	ratingAverage?: number
@@ -181,6 +181,11 @@ interface MvpQuestion {
 	text: string
 	verdict?: Verdict | null
 	important: boolean
+	quality: QuestionQuality
+	truthGuess: TruthGuess
+	firstCoreClue: boolean
+	firstMainLogic: boolean
+	firstFullSolve: boolean
 	author: {
 		id: string
 		username: string
@@ -274,6 +279,95 @@ const truthGuessLabels: Record<TruthGuess, string> = {
 	clue: '关键线索 +10',
 	motive: '主要动机 +15',
 	full: '完整汤底 +30',
+}
+
+type QuestionSignal = Pick<
+	Question,
+	| 'important'
+	| 'quality'
+	| 'truthGuess'
+	| 'firstCoreClue'
+	| 'firstMainLogic'
+	| 'firstFullSolve'
+>
+
+function hasImportantSignal(question: QuestionSignal) {
+	return Boolean(
+		question.important ||
+		question.quality !== 'none' ||
+		question.truthGuess !== 'none' ||
+		question.firstCoreClue ||
+		question.firstMainLogic ||
+		question.firstFullSolve,
+	)
+}
+
+function questionSignalTags(question: QuestionSignal) {
+	const tags: Array<{
+		key: string
+		label: string
+		type: 'success' | 'warning' | 'danger' | 'info'
+		effect: 'plain' | 'dark'
+	}> = []
+	if (question.important) {
+		tags.push({
+			key: 'important',
+			label: '重要',
+			type: 'warning',
+			effect: 'dark',
+		})
+	}
+	if (question.quality !== 'none') {
+		tags.push({
+			key: 'quality',
+			label: qualityLabels[question.quality],
+			type: 'success',
+			effect: 'plain',
+		})
+	}
+	if (question.truthGuess !== 'none') {
+		tags.push({
+			key: 'truth',
+			label: truthGuessLabels[question.truthGuess],
+			type: 'warning',
+			effect: 'plain',
+		})
+	}
+	if (question.firstCoreClue) {
+		tags.push({
+			key: 'firstCoreClue',
+			label: '首次核心线索',
+			type: 'success',
+			effect: 'dark',
+		})
+	}
+	if (question.firstMainLogic) {
+		tags.push({
+			key: 'firstMainLogic',
+			label: '首次主要逻辑',
+			type: 'warning',
+			effect: 'dark',
+		})
+	}
+	if (question.firstFullSolve) {
+		tags.push({
+			key: 'firstFullSolve',
+			label: '首位完整破解',
+			type: 'danger',
+			effect: 'dark',
+		})
+	}
+	return tags
+}
+
+function getHistoryMvpUser(item: SoupHistoryItem) {
+	if (!item.mvp) return null
+	return 'user' in item.mvp ? item.mvp.user : item.mvp
+}
+
+function getHistoryMvpQuestions(item: SoupHistoryItem) {
+	if (!item.mvp || !('importantQuestions' in item.mvp)) return []
+	return item.mvp.importantQuestions
 }
 
 const isDark = ref(loadTheme())
@@ -422,7 +516,7 @@ const answeredQuestions = computed(
 )
 const sortedQuestions = computed(() => room.value?.questions ?? [])
 const importantQuestions = computed(() =>
-	sortedQuestions.value.filter(question => question.important),
+	sortedQuestions.value.filter(question => hasImportantSignal(question)),
 )
 const memberStats = computed<MemberStats[]>(() => {
 	const byId = new Map<string, MemberStats>()
@@ -467,7 +561,7 @@ const memberStats = computed<MemberStats[]>(() => {
 		existing.points = question.author.points ?? existing.points
 		existing.rankTitle = question.author.rankTitle ?? existing.rankTitle
 		existing.questionCount += 1
-		if (question.important) {
+		if (hasImportantSignal(question)) {
 			existing.importantCount += 1
 			existing.importantQuestions.push(question)
 		}
@@ -513,7 +607,7 @@ const mvpImportantQuestions = computed<Question[]>(() =>
 	[...(room.value?.questions ?? [])]
 		.filter(
 			question =>
-				question.important &&
+				hasImportantSignal(question) &&
 				(!selectedMvpUserId.value ||
 					question.author.id === selectedMvpUserId.value),
 		)
@@ -1938,6 +2032,16 @@ function formatTime(time: string) {
 									</div>
 								</div>
 								<p class="clue-card-text">{{ question.text }}</p>
+								<div class="public-score-tags compact">
+									<el-tag
+										v-for="tag in questionSignalTags(question)"
+										:key="tag.key"
+										:type="tag.type"
+										:effect="tag.effect"
+										round
+										>{{ tag.label }}</el-tag
+									>
+								</div>
 								<el-tag
 									v-if="question.verdict"
 									class="clue-verdict-tag"
@@ -2010,6 +2114,48 @@ function formatTime(time: string) {
 									<time>{{ formatTime(question.createdAt) }}</time>
 								</div>
 								<p>{{ question.text }}</p>
+								<div
+									v-if="
+										question.quality !== 'none' ||
+										question.truthGuess !== 'none' ||
+										question.firstCoreClue ||
+										question.firstMainLogic ||
+										question.firstFullSolve
+									"
+									class="public-score-tags"
+								>
+									<el-tag
+										v-if="question.quality !== 'none'"
+										type="success"
+										effect="plain"
+										round
+										>{{ qualityLabels[question.quality] }}</el-tag
+									><el-tag
+										v-if="question.truthGuess !== 'none'"
+										type="warning"
+										effect="plain"
+										round
+										>{{ truthGuessLabels[question.truthGuess] }}</el-tag
+									><el-tag
+										v-if="question.firstCoreClue"
+										type="success"
+										effect="dark"
+										round
+										>首次核心线索</el-tag
+									><el-tag
+										v-if="question.firstMainLogic"
+										type="warning"
+										effect="dark"
+										round
+										>首次主要逻辑</el-tag
+									><el-tag
+										v-if="question.firstFullSolve"
+										type="danger"
+										effect="dark"
+										round
+										>首位完整破解</el-tag
+									>
+								</div>
 							</div>
 							<div class="verdict-zone">
 								<div class="tag-line">
@@ -2038,8 +2184,12 @@ function formatTime(time: string) {
 								class="host-action-panel"
 								@click.stop
 							>
+								<div class="host-action-heading">
+									<strong>主持人操作</strong>
+									<small>判定回答、标记线索，并记录本轮积分依据</small>
+								</div>
 								<div class="action-group">
-									<span>判定</span
+									<span class="action-title">判定</span
 									><button
 										class="judge yes"
 										type="button"
@@ -2067,7 +2217,7 @@ function formatTime(time: string) {
 									</button>
 								</div>
 								<div class="action-group">
-									<span>标记</span
+									<span class="action-title">标记</span
 									><button
 										:class="['judge', 'flag', { active: question.important }]"
 										type="button"
@@ -2370,12 +2520,16 @@ function formatTime(time: string) {
 									class="rich-display"
 									v-html="sanitizeRichText(item.surface)"
 								/>
-								<div v-if="item.mvp" class="soup-history-mvp">
+								<div v-if="getHistoryMvpUser(item)" class="soup-history-mvp">
 									<span>MVP</span>
-									<el-avatar :size="22" :src="item.mvp.avatarDataUrl">{{
-										item.mvp.displayName.slice(0, 1)
-									}}</el-avatar>
-									<strong>{{ item.mvp.displayName }}</strong>
+									<el-avatar
+										:size="22"
+										:src="getHistoryMvpUser(item)?.avatarDataUrl"
+										>{{
+											getHistoryMvpUser(item)?.displayName.slice(0, 1)
+										}}</el-avatar
+									>
+									<strong>{{ getHistoryMvpUser(item)?.displayName }}</strong>
 								</div>
 								<div class="soup-history-rating">
 									<el-rate
@@ -2853,6 +3007,16 @@ function formatTime(time: string) {
 							</div>
 						</div>
 						<p class="clue-card-text">{{ question.text }}</p>
+						<div class="public-score-tags compact">
+							<el-tag
+								v-for="tag in questionSignalTags(question)"
+								:key="tag.key"
+								:type="tag.type"
+								:effect="tag.effect"
+								round
+								>{{ tag.label }}</el-tag
+							>
+						</div>
 						<el-tag
 							v-if="question.verdict"
 							class="clue-verdict-tag"
@@ -2901,23 +3065,74 @@ function formatTime(time: string) {
 						</div>
 						<div class="history-detail-section">
 							<span>MVP</span>
-							<div v-if="selectedSoupHistoryItem.mvp" class="history-mvp-line">
+							<div
+								v-if="getHistoryMvpUser(selectedSoupHistoryItem)"
+								class="history-mvp-line"
+							>
 								<el-avatar
 									:size="38"
-									:src="selectedSoupHistoryItem.mvp.avatarDataUrl"
+									:src="
+										getHistoryMvpUser(selectedSoupHistoryItem)?.avatarDataUrl
+									"
 									>{{
-										selectedSoupHistoryItem.mvp.displayName.slice(0, 1)
+										getHistoryMvpUser(
+											selectedSoupHistoryItem,
+										)?.displayName.slice(0, 1)
 									}}</el-avatar
 								>
 								<div>
-									<strong>{{ selectedSoupHistoryItem.mvp.displayName }}</strong>
+									<strong>{{
+										getHistoryMvpUser(selectedSoupHistoryItem)?.displayName
+									}}</strong>
 									<small
-										>{{ selectedSoupHistoryItem.mvp.rankTitle }} ·
-										{{ selectedSoupHistoryItem.mvp.points }} 分</small
+										>{{ getHistoryMvpUser(selectedSoupHistoryItem)?.rankTitle }}
+										·
+										{{ getHistoryMvpUser(selectedSoupHistoryItem)?.points }}
+										分</small
 									>
 								</div>
 							</div>
 							<p v-else>暂未评定 MVP</p>
+						</div>
+					</section>
+					<section
+						v-if="getHistoryMvpQuestions(selectedSoupHistoryItem).length"
+						class="history-detail-section"
+					>
+						<span>MVP 重要线索</span>
+						<div class="mvp-clue-list">
+							<article
+								v-for="question in getHistoryMvpQuestions(
+									selectedSoupHistoryItem,
+								)"
+								:key="question.id"
+								class="mvp-clue-card"
+							>
+								<div class="question-meta">
+									<span>{{ question.author.displayName }}</span>
+									<time>{{ formatTime(question.createdAt) }}</time>
+								</div>
+								<p>{{ question.text }}</p>
+								<div class="public-score-tags compact">
+									<el-tag
+										v-for="tag in questionSignalTags(question)"
+										:key="tag.key"
+										:type="tag.type"
+										:effect="tag.effect"
+										round
+										>{{ tag.label }}</el-tag
+									>
+								</div>
+								<el-tag
+									v-if="question.verdict"
+									class="clue-verdict-tag"
+									:class="question.verdict"
+									:type="verdictTypes[question.verdict]"
+									effect="plain"
+									round
+									>{{ verdictLabels[question.verdict] }}</el-tag
+								>
+							</article>
 						</div>
 					</section>
 				</div>
@@ -3042,6 +3257,16 @@ function formatTime(time: string) {
 									<time>{{ formatTime(question.createdAt) }}</time>
 								</div>
 								<p>{{ question.text }}</p>
+								<div class="public-score-tags compact">
+									<el-tag
+										v-for="tag in questionSignalTags(question)"
+										:key="tag.key"
+										:type="tag.type"
+										:effect="tag.effect"
+										round
+										>{{ tag.label }}</el-tag
+									>
+								</div>
 								<el-tag
 									v-if="question.verdict"
 									class="clue-verdict-tag"
@@ -3107,6 +3332,16 @@ function formatTime(time: string) {
 									<time>{{ formatTime(question.createdAt) }}</time>
 								</div>
 								<p>{{ question.text }}</p>
+								<div class="public-score-tags compact">
+									<el-tag
+										v-for="tag in questionSignalTags(question)"
+										:key="tag.key"
+										:type="tag.type"
+										:effect="tag.effect"
+										round
+										>{{ tag.label }}</el-tag
+									>
+								</div>
 								<el-tag
 									v-if="question.verdict"
 									class="clue-verdict-tag"

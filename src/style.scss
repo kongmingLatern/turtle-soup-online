@@ -801,6 +801,29 @@ textarea {
   min-width: 0;
 }
 
+.public-score-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.public-score-tags .el-tag {
+  border-radius: 999px;
+  font-weight: 900;
+}
+
+.public-score-tags.compact {
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.public-score-tags.compact .el-tag {
+  height: 22px;
+  padding: 0 7px;
+  font-size: 11px;
+}
+
 .question-item:hover,
 .question-item.selected {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
@@ -867,14 +890,36 @@ textarea {
 .host-action-panel {
   grid-column: 1 / -1;
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
   padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--line));
+  border-radius: 8px;
   background:
-    linear-gradient(135deg, rgba(45, 212, 191, 0.1), transparent 44%),
-    color-mix(in srgb, var(--surface-strong) 86%, transparent);
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 48%),
+    color-mix(in srgb, var(--surface-strong) 82%, transparent);
   cursor: default;
+}
+
+.host-action-heading {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 2px;
+}
+
+.host-action-heading strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.host-action-heading small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .host-console-panel {
@@ -1018,9 +1063,14 @@ textarea {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 66%, transparent);
 
-  span {
+  .action-title {
     min-width: 44px;
+    flex-basis: 100%;
     color: var(--muted);
     font-size: 12px;
     font-weight: 900;
@@ -1028,10 +1078,10 @@ textarea {
 }
 
 .judge {
-  min-height: 32px;
-  padding: 0 12px;
+  min-height: 34px;
+  padding: 0 13px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 8px;
   color: var(--text);
   background: color-mix(in srgb, var(--surface-strong) 72%, transparent);
   cursor: pointer;
@@ -1073,6 +1123,7 @@ textarea {
 }
 
 .score-grid {
+  grid-column: 1 / -1;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
@@ -1087,9 +1138,14 @@ textarea {
 }
 
 .achievement-row {
+  grid-column: 1 / -1;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 66%, transparent);
 
   .el-checkbox {
     margin-right: 0;
@@ -2297,6 +2353,7 @@ canvas.readonly {
   }
 
   .host-action-panel {
+    grid-template-columns: 1fr;
     gap: 10px;
     padding: 12px;
     border-radius: 8px;
