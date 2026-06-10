@@ -387,6 +387,7 @@ const selectedSoupId = ref('')
 const roomCodeInput = ref(getInitialRoomCode())
 const room = ref<RoomState | null>(null)
 const questionText = ref('')
+const questionInputRef = ref()
 const selectedQuestionId = ref('')
 const shareUrl = ref(window.location.href)
 const answerHidden = ref(true)
@@ -1042,6 +1043,20 @@ function resetRoundState(nextRoom?: RoomState) {
 	nextTick(() => restoreCanvas(''))
 }
 
+function upsertQuestion(question: Question) {
+	if (!room.value) return
+	const index = room.value.questions.findIndex(item => item.id === question.id)
+	if (index >= 0) {
+		room.value.questions.splice(index, 1, question)
+	} else {
+		room.value.questions.unshift(question)
+	}
+	room.value.questions.sort(
+		(a, b) =>
+			new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+	)
+}
+
 function normalizeAmbience(roomData: RoomState): RoomAmbience {
 	const cached =
 		roomAmbienceCache.get(roomData.code) ?? loadCachedAmbience(roomData.code)
@@ -1224,6 +1239,13 @@ function connectSocket(code: string) {
 			mvpSelectDialogOpen.value = false
 			mvpResultDialogOpen.value = true
 		})
+		socket.on(
+			'question-added',
+			(event: { roomCode: string; question: Question }) => {
+				if (event.roomCode !== room.value?.code) return
+				upsertQuestion(event.question)
+			},
+		)
 		socket.on('room-members', (members: RoomMember[]) => {
 			roomMembers.value = members
 		})
@@ -1372,7 +1394,7 @@ async function addQuestion() {
 	if (sendingQuestion.value) return
 	sendingQuestion.value = true
 	try {
-		const data = await request<RoomState>(
+		const question = await request<Question>(
 			`/rooms/${room.value.code}/questions`,
 			{
 				method: 'POST',
@@ -1380,7 +1402,9 @@ async function addQuestion() {
 			},
 		)
 		questionText.value = ''
-		room.value = data
+		upsertQuestion(question)
+		await nextTick()
+		questionInputRef.value?.focus?.()
 	} catch (error) {
 		ElMessage.error(error instanceof Error ? error.message : '发送失败')
 	} finally {
@@ -2064,6 +2088,7 @@ function formatTime(time: string) {
 					</div>
 					<div class="ask-row">
 						<el-input
+							ref="questionInputRef"
 							v-model="questionText"
 							size="large"
 							placeholder="输入问题，例如：这个人认识厨师吗？"
