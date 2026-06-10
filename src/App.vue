@@ -125,7 +125,9 @@ interface SoupHistoryItem {
 		id: string
 		username: string
 		displayName: string
+		avatarDataUrl?: string
 	}
+	mvp?: AuthUser | null
 	startedAt: string
 	revealedAt?: string
 	ratingAverage?: number
@@ -325,6 +327,8 @@ const mvpResultDialogOpen = ref(false)
 const selectedMvpUserId = ref('')
 const mvpSubmitting = ref(false)
 const mvpResult = ref<MvpResult | null>(null)
+const soupHistoryDetailOpen = ref(false)
+const selectedSoupHistoryItem = ref<SoupHistoryItem | null>(null)
 const customSoupOpen = ref(false)
 const soupManagerOpen = ref(false)
 const editingSoupId = ref('')
@@ -1340,6 +1344,11 @@ function openMemberImportant(member: MemberStats) {
 	memberDialogOpen.value = true
 }
 
+function openSoupHistoryDetail(item: SoupHistoryItem) {
+	selectedSoupHistoryItem.value = item
+	soupHistoryDetailOpen.value = true
+}
+
 function canTransferHostTo(member: MemberStats) {
 	return Boolean(
 		canHost.value &&
@@ -2324,22 +2333,50 @@ function formatTime(time: string) {
 								v-for="item in soupHistory"
 								:key="item.id"
 								class="soup-history-item"
+								role="button"
+								tabindex="0"
+								@click="openSoupHistoryDetail(item)"
+								@keyup.enter="openSoupHistoryDetail(item)"
 							>
-								<div>
+								<div class="soup-history-head">
 									<strong>{{ item.title }}</strong>
-									<span
-										>主持人：{{
-											item.host?.displayName ?? room?.host.displayName ?? '未知'
-										}}</span
-									>
-								</div>
-								<div class="soup-history-meta">
-									<time>{{ formatTime(item.startedAt) }}</time>
+									<div class="soup-history-host">
+										<span style="display: flex; align-items: center"
+											>主持人：
+											<el-avatar
+												:size="22"
+												style="margin-right: 3px"
+												:src="
+													item.host?.avatarDataUrl || room?.host.avatarDataUrl
+												"
+												>{{
+													(
+														item.host?.displayName ??
+														room?.host.displayName ??
+														'?'
+													).slice(0, 1)
+												}}</el-avatar
+											>{{
+												item.host?.displayName ??
+												room?.host.displayName ??
+												'未知'
+											}}</span
+										>
+
+										<time>{{ formatTime(item.startedAt) }}</time>
+									</div>
 								</div>
 								<p
 									class="rich-display"
 									v-html="sanitizeRichText(item.surface)"
 								/>
+								<div v-if="item.mvp" class="soup-history-mvp">
+									<span>MVP</span>
+									<el-avatar :size="22" :src="item.mvp.avatarDataUrl">{{
+										item.mvp.displayName.slice(0, 1)
+									}}</el-avatar>
+									<strong>{{ item.mvp.displayName }}</strong>
+								</div>
 								<div class="soup-history-rating">
 									<el-rate
 										:model-value="item.ratingAverage || 0"
@@ -2828,6 +2865,63 @@ function formatTime(time: string) {
 					</article>
 				</div></el-dialog
 			>
+			<el-dialog
+				v-model="soupHistoryDetailOpen"
+				:title="selectedSoupHistoryItem?.title ?? '汤面记录'"
+				width="min(760px, 94vw)"
+			>
+				<div v-if="selectedSoupHistoryItem" class="soup-history-detail">
+					<section class="history-detail-section">
+						<span>汤底</span>
+						<div
+							class="rich-display"
+							v-html="sanitizeRichText(selectedSoupHistoryItem.answer)"
+						/>
+					</section>
+					<section class="history-detail-grid">
+						<div class="history-detail-section">
+							<span>评分</span>
+							<div class="history-rating-line">
+								<el-rate
+									:model-value="selectedSoupHistoryItem.ratingAverage || 0"
+									disabled
+									allow-half
+								/>
+								<strong>{{
+									selectedSoupHistoryItem.ratingCount
+										? `${selectedSoupHistoryItem.ratingAverage} 分`
+										: '暂无评分'
+								}}</strong>
+								<small>{{
+									selectedSoupHistoryItem.ratingCount
+										? `${selectedSoupHistoryItem.ratingCount} 人评分`
+										: '等待玩家评分'
+								}}</small>
+							</div>
+						</div>
+						<div class="history-detail-section">
+							<span>MVP</span>
+							<div v-if="selectedSoupHistoryItem.mvp" class="history-mvp-line">
+								<el-avatar
+									:size="38"
+									:src="selectedSoupHistoryItem.mvp.avatarDataUrl"
+									>{{
+										selectedSoupHistoryItem.mvp.displayName.slice(0, 1)
+									}}</el-avatar
+								>
+								<div>
+									<strong>{{ selectedSoupHistoryItem.mvp.displayName }}</strong>
+									<small
+										>{{ selectedSoupHistoryItem.mvp.rankTitle }} ·
+										{{ selectedSoupHistoryItem.mvp.points }} 分</small
+									>
+								</div>
+							</div>
+							<p v-else>暂未评定 MVP</p>
+						</div>
+					</section>
+				</div>
+			</el-dialog>
 			<el-dialog
 				v-model="settlementDialogOpen"
 				title="本局积分排行榜"
