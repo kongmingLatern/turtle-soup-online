@@ -1972,7 +1972,7 @@ function formatTime(time: string) {
 									v-if="canHost && room"
 									v-model="room.title"
 									class="title-input"
-									@input="queueRoomSave"
+									@change="saveRoom"
 								/>
 								<h2 v-else>
 									{{ room?.title ?? '请选择汤面并创建或加入房间' }}
@@ -1987,7 +1987,7 @@ function formatTime(time: string) {
 							v-model="room.surface"
 							:min-rows="8"
 							placeholder="写下可公开给玩家的汤面"
-							@input="queueRoomSave"
+							@blur="saveRoom"
 						/>
 						<p
 							v-else
