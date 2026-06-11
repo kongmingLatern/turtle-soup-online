@@ -48,7 +48,7 @@ interface AuthUser {
 	id: string
 	username: string
 	displayName: string
-	avatarDataUrl: string
+	avatarDataUrl?: string
 	points: number
 	rankTitle: string
 }
@@ -113,6 +113,7 @@ interface RoomState {
 	ratingMap?: Record<string, number> | null
 	host: AuthUser
 	questions: Question[]
+	avatarCache?: Record<string, string>
 	updatedAt: string
 }
 
@@ -200,6 +201,18 @@ interface MvpResult {
 	user: AuthUser
 	importantQuestions: MvpQuestion[]
 }
+
+interface QuestionMutationResponse {
+	question: Question
+	avatarCache?: Record<string, string>
+}
+
+interface QuestionRemoveResponse {
+	questionId: string
+}
+
+type QuestionPatchResponse = Question | QuestionMutationResponse | RoomState
+type QuestionDeleteResponse = QuestionRemoveResponse | RoomState
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
 const STORAGE_TOKEN = 'turtle-soup:token'
@@ -507,6 +520,7 @@ let ambienceDirty = false
 const presenceNotifyAt = new Map<string, number>()
 const roomAmbienceCache = new Map<string, RoomAmbience>()
 const questionSortTimes = new Map<string, number>()
+const avatarCache = new Map<string, string>()
 
 const canHost = computed(() =>
 	Boolean(user.value && room.value?.host.id === user.value.id),
@@ -813,10 +827,100 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 	return response.json() as Promise<T>
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null
+}
+
+function isRoomState(value: unknown): value is RoomState {
+	return (
+		isRecord(value) &&
+		typeof value.code === 'string' &&
+		Array.isArray(value.questions)
+	)
+}
+
+function isQuestionMutationResponse(
+	value: unknown,
+): value is QuestionMutationResponse {
+	return isRecord(value) && isRecord(value.question)
+}
+
+function rememberAvatar(userId?: string, avatarDataUrl?: string) {
+	if (userId && avatarDataUrl) avatarCache.set(userId, avatarDataUrl)
+}
+
+function rememberAvatarCache(cache?: Record<string, string> | null) {
+	Object.entries(cache ?? {}).forEach(([userId, avatarDataUrl]) => {
+		rememberAvatar(userId, avatarDataUrl)
+	})
+}
+
+function hydrateUserAvatar<T extends { id: string; avatarDataUrl?: string }>(
+	userData: T,
+): T {
+	rememberAvatar(userData.id, userData.avatarDataUrl)
+	const avatarDataUrl = userData.avatarDataUrl || avatarCache.get(userData.id) || ''
+	if (avatarDataUrl === userData.avatarDataUrl) return userData
+	return { ...userData, avatarDataUrl }
+}
+
+function hydrateRoomMember(member: RoomMember): RoomMember {
+	rememberAvatar(member.userId, member.avatarDataUrl)
+	const avatarDataUrl = member.avatarDataUrl || avatarCache.get(member.userId) || ''
+	if (avatarDataUrl === member.avatarDataUrl) return member
+	return { ...member, avatarDataUrl }
+}
+
+function hydrateQuestion(question: Question): Question {
+	return {
+		...question,
+		author: hydrateUserAvatar(question.author),
+	}
+}
+
+function hydrateRoom(data: RoomState): RoomState {
+	rememberAvatarCache(data.avatarCache)
+	return {
+		...data,
+		host: hydrateUserAvatar(data.host),
+		questions: data.questions.map(hydrateQuestion),
+	}
+}
+
+function applyQuestionPatchResponse(response: QuestionPatchResponse) {
+	if (isRoomState(response)) {
+		room.value = hydrateRoom(response)
+		return
+	}
+	if (isQuestionMutationResponse(response)) {
+		rememberAvatarCache(response.avatarCache)
+		upsertQuestion(response.question)
+		return
+	}
+	upsertQuestion(response)
+}
+
+function removeQuestionLocally(questionId: string) {
+	if (!room.value) return
+	room.value.questions = room.value.questions.filter(
+		question => question.id !== questionId,
+	)
+	questionSortTimes.delete(questionId)
+	if (selectedQuestionId.value === questionId) selectedQuestionId.value = ''
+}
+
+function applyQuestionDeleteResponse(response: QuestionDeleteResponse) {
+	if (isRoomState(response)) {
+		room.value = hydrateRoom(response)
+		return
+	}
+	removeQuestionLocally(response.questionId)
+}
+
 async function restoreSession() {
 	if (!token.value) return
 	try {
-		user.value = await request<AuthUser>('/auth/me')
+		user.value = hydrateUserAvatar(await request<AuthUser>('/auth/me'))
 	} catch {
 		logout(false)
 	}
@@ -841,7 +945,7 @@ async function submitAuth() {
 			body: JSON.stringify(payload),
 		})
 		token.value = data.token
-		user.value = data.user
+		user.value = hydrateUserAvatar(data.user)
 		localStorage.setItem(STORAGE_TOKEN, data.token)
 		await loadSoups()
 		if (room.value) {
@@ -1037,15 +1141,17 @@ async function joinRoom(code = roomCodeInput.value, showMessage = true) {
 }
 
 function applyRoom(data: RoomState) {
-	room.value = data
-	mvpResult.value = data.mvp ?? null
-	roomCodeInput.value = data.code
+	const nextRoom = hydrateRoom(data)
+	room.value = nextRoom
+	mvpResult.value = nextRoom.mvp ?? null
+	roomCodeInput.value = nextRoom.code
 	useHostBackground.value =
-		localStorage.getItem(STORAGE_USE_HOST_BACKGROUND_PREFIX + data.code) !== '0'
-	syncAmbienceFromRoom(data)
-	syncSelectedSoupFromRoom(data)
+		localStorage.getItem(STORAGE_USE_HOST_BACKGROUND_PREFIX + nextRoom.code) !==
+		'0'
+	syncAmbienceFromRoom(nextRoom)
+	syncSelectedSoupFromRoom(nextRoom)
 	updateShareUrl()
-	connectSocket(data.code)
+	connectSocket(nextRoom.code)
 	nextTick(() => {
 		resizeCanvas()
 		restoreCanvas()
@@ -1062,7 +1168,7 @@ function syncSelectedSoupFromRoom(data: RoomState) {
 }
 
 function resetRoundState(nextRoom?: RoomState) {
-	if (nextRoom) room.value = nextRoom
+	if (nextRoom) room.value = hydrateRoom(nextRoom)
 	if (room.value) room.value.questions = []
 	questionSortTimes.clear()
 	questionText.value = ''
@@ -1088,12 +1194,15 @@ function getQuestionSortTime(question: Question) {
 
 function upsertQuestion(question: Question) {
 	if (!room.value) return
-	getQuestionSortTime(question)
-	const index = room.value.questions.findIndex(item => item.id === question.id)
+	const nextQuestion = hydrateQuestion(question)
+	getQuestionSortTime(nextQuestion)
+	const index = room.value.questions.findIndex(
+		item => item.id === nextQuestion.id,
+	)
 	if (index >= 0) {
-		room.value.questions.splice(index, 1, question)
+		room.value.questions.splice(index, 1, nextQuestion)
 	} else {
-		room.value.questions.unshift(question)
+		room.value.questions.unshift(nextQuestion)
 	}
 }
 
@@ -1208,12 +1317,13 @@ function connectSocket(code: string) {
 		})
 		socket.on('room-updated', (nextRoom: RoomState) => {
 			if (nextRoom.code !== room.value?.code) return
-			room.value = nextRoom
+			const hydratedRoom = hydrateRoom(nextRoom)
+			room.value = hydratedRoom
 			selectedRole.value = canHost.value ? 'host' : 'player'
-			syncAmbienceFromRoom(nextRoom)
-			syncSelectedSoupFromRoom(nextRoom)
-			if (nextRoom.settlement) settlement.value = nextRoom.settlement
-			if (nextRoom.mvp) mvpResult.value = nextRoom.mvp
+			syncAmbienceFromRoom(hydratedRoom)
+			syncSelectedSoupFromRoom(hydratedRoom)
+			if (hydratedRoom.settlement) settlement.value = hydratedRoom.settlement
+			if (hydratedRoom.mvp) mvpResult.value = hydratedRoom.mvp
 			nextTick(() => restoreCanvas())
 		})
 		socket.on(
@@ -1281,20 +1391,47 @@ function connectSocket(code: string) {
 		})
 		socket.on(
 			'question-added',
-			(event: { roomCode: string; question: Question }) => {
+			(event: {
+				roomCode: string
+				question: Question
+				avatarCache?: Record<string, string>
+			}) => {
 				if (event.roomCode !== room.value?.code) return
+				rememberAvatarCache(event.avatarCache)
 				upsertQuestion(event.question)
 			},
 		)
+		socket.on(
+			'question-updated',
+			(event: {
+				roomCode: string
+				question: Question
+				avatarCache?: Record<string, string>
+			}) => {
+				if (event.roomCode !== room.value?.code) return
+				rememberAvatarCache(event.avatarCache)
+				upsertQuestion(event.question)
+			},
+		)
+		socket.on(
+			'question-removed',
+			(event: { roomCode: string; questionId: string }) => {
+				if (event.roomCode !== room.value?.code) return
+				removeQuestionLocally(event.questionId)
+			},
+		)
 		socket.on('room-members', (members: RoomMember[]) => {
-			roomMembers.value = members
+			roomMembers.value = members.map(hydrateRoomMember)
 		})
 		socket.on('room-presence', (event: PresenceEvent) => {
 			const notifyKey = `${event.type}:${event.user.userId}`
 			const now = Date.now()
 			if ((presenceNotifyAt.get(notifyKey) ?? 0) + 2000 > now) return
 			presenceNotifyAt.set(notifyKey, now)
-			presenceEvents.value = [event, ...presenceEvents.value].slice(0, 5)
+			presenceEvents.value = [
+				{ ...event, user: hydrateRoomMember(event.user) },
+				...presenceEvents.value,
+			].slice(0, 5)
 			const notify = event.type === 'join' ? ElMessage.success : ElMessage.info
 			notify(event.message)
 		})
@@ -1403,9 +1540,10 @@ async function saveRoom() {
 					: basePayload,
 			),
 		})
-		rememberRoomAmbience(data.code, nextAmbience)
-		room.value = data
-		syncAmbienceFromRoom(data)
+		const nextRoom = hydrateRoom(data)
+		rememberRoomAmbience(nextRoom.code, nextAmbience)
+		room.value = nextRoom
+		syncAmbienceFromRoom(nextRoom)
 	} catch (error) {
 		if (ambienceServerUnsupported.value || !room.value) throw error
 		rememberRoomAmbience(room.value.code, nextAmbience)
@@ -1414,8 +1552,9 @@ async function saveRoom() {
 			body: JSON.stringify(basePayload),
 		})
 		ambienceServerUnsupported.value = true
-		room.value = data
-		syncAmbienceFromRoom(data)
+		const nextRoom = hydrateRoom(data)
+		room.value = nextRoom
+		syncAmbienceFromRoom(nextRoom)
 		if (!ambiencePersistWarned.value) {
 			ambiencePersistWarned.value = true
 			ElMessage.warning('当前后端暂未保存沉浸设置，已保留本机预览')
@@ -1454,13 +1593,14 @@ async function addQuestion() {
 
 async function setVerdict(questionId: string, verdict: Verdict) {
 	if (!canHost.value || !room.value) return
-	room.value = await request<RoomState>(
+	const response = await request<QuestionPatchResponse>(
 		`/rooms/${room.value.code}/questions/${questionId}`,
 		{
 			method: 'PATCH',
 			body: JSON.stringify({ verdict }),
 		},
 	)
+	applyQuestionPatchResponse(response)
 }
 
 async function updateQuestionScoring(
@@ -1477,24 +1617,26 @@ async function updateQuestionScoring(
 	>,
 ) {
 	if (!canHost.value || !room.value) return
-	room.value = await request<RoomState>(
+	const response = await request<QuestionPatchResponse>(
 		`/rooms/${room.value.code}/questions/${question.id}`,
 		{
 			method: 'PATCH',
 			body: JSON.stringify(patch),
 		},
 	)
+	applyQuestionPatchResponse(response)
 }
 
 async function toggleImportant(question: Question) {
 	if (!canHost.value || !room.value) return
-	room.value = await request<RoomState>(
+	const response = await request<QuestionPatchResponse>(
 		`/rooms/${room.value.code}/questions/${question.id}`,
 		{
 			method: 'PATCH',
 			body: JSON.stringify({ important: !question.important }),
 		},
 	)
+	applyQuestionPatchResponse(response)
 }
 
 function openMemberImportant(member: MemberStats) {
@@ -1530,7 +1672,7 @@ async function transferHost(member: MemberStats) {
 			body: JSON.stringify({ userId: member.userId }),
 		},
 	)
-	room.value = data
+	room.value = hydrateRoom(data)
 	selectedRole.value = canHost.value ? 'host' : 'player'
 	if (activePanel.value !== 'canvas') {
 		toolDockOpen.value = false
@@ -1603,10 +1745,11 @@ async function submitMvpSelection() {
 async function rateCurrentSoup(rating: number) {
 	if (!room.value || !canRateCurrentSoup.value) return
 	try {
-		room.value = await request<RoomState>(`/rooms/${room.value.code}/rating`, {
+		const data = await request<RoomState>(`/rooms/${room.value.code}/rating`, {
 			method: 'POST',
 			body: JSON.stringify({ rating }),
 		})
+		room.value = hydrateRoom(data)
 		ElMessage.success('评分已提交')
 	} catch (error) {
 		ElMessage.error(error instanceof Error ? error.message : '评分失败')
@@ -1615,10 +1758,12 @@ async function rateCurrentSoup(rating: number) {
 
 async function uploadAvatar(file: File) {
 	const dataUrl = await fileToDataUrl(file)
-	user.value = await request<AuthUser>('/auth/me', {
-		method: 'PATCH',
-		body: JSON.stringify({ avatarDataUrl: dataUrl }),
-	})
+	user.value = hydrateUserAvatar(
+		await request<AuthUser>('/auth/me', {
+			method: 'PATCH',
+			body: JSON.stringify({ avatarDataUrl: dataUrl }),
+		}),
+	)
 	if (room.value) {
 		joinSocketRoom(room.value.code)
 		await joinRoom(room.value.code, false)
@@ -1771,12 +1916,13 @@ function fileToDataUrl(file: File) {
 
 async function removeQuestion(questionId: string) {
 	if (!canHost.value || !room.value) return
-	room.value = await request<RoomState>(
+	const response = await request<QuestionDeleteResponse>(
 		`/rooms/${room.value.code}/questions/${questionId}`,
 		{
 			method: 'DELETE',
 		},
 	)
+	applyQuestionDeleteResponse(response)
 }
 
 function getCanvasPoint(event: PointerEvent) {
