@@ -388,6 +388,7 @@ const roomCodeInput = ref(getInitialRoomCode())
 const room = ref<RoomState | null>(null)
 const questionText = ref('')
 const questionInputRef = ref()
+const questionViewMode = ref<'all' | 'mine'>('all')
 const selectedQuestionId = ref('')
 const shareUrl = ref(window.location.href)
 const answerHidden = ref(true)
@@ -505,6 +506,7 @@ let syncingAmbience = false
 let ambienceDirty = false
 const presenceNotifyAt = new Map<string, number>()
 const roomAmbienceCache = new Map<string, RoomAmbience>()
+const questionSortTimes = new Map<string, number>()
 
 const canHost = computed(() =>
 	Boolean(user.value && room.value?.host.id === user.value.id),
@@ -515,7 +517,19 @@ const pendingQuestions = computed(
 const answeredQuestions = computed(
 	() => room.value?.questions.filter(question => question.verdict).length ?? 0,
 )
-const sortedQuestions = computed(() => room.value?.questions ?? [])
+const sortedQuestions = computed(() =>
+	[...(room.value?.questions ?? [])].sort(
+		(a, b) => getQuestionSortTime(b) - getQuestionSortTime(a),
+	),
+)
+const myQuestions = computed(() =>
+	user.value
+		? sortedQuestions.value.filter(question => question.author.id === user.value?.id)
+		: [],
+)
+const visibleQuestions = computed(() =>
+	questionViewMode.value === 'mine' ? myQuestions.value : sortedQuestions.value,
+)
 const importantQuestions = computed(() =>
 	sortedQuestions.value.filter(question => hasImportantSignal(question)),
 )
@@ -1031,6 +1045,7 @@ function syncSelectedSoupFromRoom(data: RoomState) {
 function resetRoundState(nextRoom?: RoomState) {
 	if (nextRoom) room.value = nextRoom
 	if (room.value) room.value.questions = []
+	questionSortTimes.clear()
 	questionText.value = ''
 	settlement.value = null
 	settlementDialogOpen.value = false
@@ -1043,18 +1058,24 @@ function resetRoundState(nextRoom?: RoomState) {
 	nextTick(() => restoreCanvas(''))
 }
 
+function getQuestionSortTime(question: Question) {
+	const cached = questionSortTimes.get(question.id)
+	if (typeof cached === 'number') return cached
+	const parsed = new Date(question.createdAt).getTime()
+	const sortTime = Number.isFinite(parsed) ? parsed : Date.now()
+	questionSortTimes.set(question.id, sortTime)
+	return sortTime
+}
+
 function upsertQuestion(question: Question) {
 	if (!room.value) return
+	getQuestionSortTime(question)
 	const index = room.value.questions.findIndex(item => item.id === question.id)
 	if (index >= 0) {
 		room.value.questions.splice(index, 1, question)
 	} else {
 		room.value.questions.unshift(question)
 	}
-	room.value.questions.sort(
-		(a, b) =>
-			new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-	)
 }
 
 function normalizeAmbience(roomData: RoomState): RoomAmbience {
@@ -2086,6 +2107,22 @@ function formatTime(time: string) {
 						</div>
 						<span class="subtle">{{ onlineHint }}</span>
 					</div>
+					<div class="qa-filter-bar">
+						<el-radio-group
+							v-model="questionViewMode"
+							size="small"
+							@change="selectedQuestionId = ''"
+						>
+							<el-radio-button label="all">
+								全部
+								<span>{{ sortedQuestions.length }}</span>
+							</el-radio-button>
+							<el-radio-button label="mine" :disabled="!user">
+								我的发言
+								<span>{{ myQuestions.length }}</span>
+							</el-radio-button>
+						</el-radio-group>
+					</div>
 					<div class="ask-row">
 						<el-input
 							ref="questionInputRef"
@@ -2106,11 +2143,15 @@ function formatTime(time: string) {
 					</div>
 					<div class="timeline">
 						<el-empty
-							v-if="!sortedQuestions.length"
-							description="还没有问题，开汤吧。"
+							v-if="!visibleQuestions.length"
+							:description="
+								questionViewMode === 'mine'
+									? '本局还没有你的发言'
+									: '还没有问题，开汤吧。'
+							"
 						/>
 						<article
-							v-for="question in sortedQuestions"
+							v-for="question in visibleQuestions"
 							:key="question.id"
 							:class="[
 								'question-item',
