@@ -22,7 +22,6 @@ import {
 	VideoPause,
 	VideoPlay,
 } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import {
 	computed,
@@ -33,6 +32,7 @@ import {
 	ref,
 	watch,
 } from 'vue'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { io, Socket } from 'socket.io-client'
 import RichTextEditor from './components/RichTextEditor.vue'
 import { richTextToPlainText, sanitizeRichText } from './utils/richText'
@@ -970,17 +970,36 @@ async function deleteSoup(soup: Soup) {
 	}
 }
 
-async function createRoom() {
+async function createRoom(options: { replaceCurrent?: boolean } = {}) {
 	if (!user.value) return ElMessage.warning('请先登录')
 	if (!selectedSoupId.value)
 		return ElMessage.warning('请先创建并选择自己的汤面')
+	const previousRoomCode = room.value?.code
 	const data = await request<RoomState>('/rooms', {
 		method: 'POST',
 		body: JSON.stringify({ soupId: selectedSoupId.value || undefined }),
 	})
+	if (
+		options.replaceCurrent &&
+		previousRoomCode &&
+		previousRoomCode !== data.code
+	) {
+		leaveCurrentRoom()
+		presenceEvents.value = []
+	}
 	applyRoom(data)
 	selectedRole.value = 'host'
 	ElMessage.success(`房间 ${data.code} 已创建`)
+}
+
+async function handleRoomActionCommand(command: string | number | object) {
+	if (command === 'create') {
+		await createRoom({ replaceCurrent: true })
+		return
+	}
+	if (command === 'switch') {
+		await switchRoomSoup()
+	}
 }
 
 async function switchRoomSoup() {
@@ -2420,15 +2439,36 @@ function formatTime(time: string) {
 									:disabled="!user"
 									@click="openCreateSoupDialog"
 									>自建汤面</el-button
-								><el-button
-									type="primary"
-									:icon="Plus"
-									:disabled="
-										!user ||
-										Boolean(room && (!canHost || isSelectedCurrentSoup))
-									"
-									@click="room ? switchRoomSoup() : createRoom()"
-									>{{ room ? '切换当前题目' : '创建房间' }}</el-button
+								><el-dropdown
+									trigger="click"
+									:disabled="!user"
+									@command="handleRoomActionCommand"
+								>
+									<el-button type="primary" :icon="Plus" :disabled="!user"
+										>创建房间</el-button
+									>
+									<template #dropdown>
+										<el-dropdown-menu>
+											<el-dropdown-item
+												command="create"
+												:disabled="!selectedSoupId"
+											>
+												创建新房间
+											</el-dropdown-item>
+											<el-dropdown-item
+												command="switch"
+												:disabled="
+													!room ||
+													!canHost ||
+													!selectedSoupId ||
+													isSelectedCurrentSoup
+												"
+											>
+												切换当前题目
+											</el-dropdown-item>
+										</el-dropdown-menu>
+									</template>
+								</el-dropdown
 								>
 								<el-button type="info" @click="soupManagerOpen = true"
 									>管理汤面</el-button
