@@ -15,6 +15,7 @@ import {
 	Plus,
 	Refresh,
 	Right,
+	Search,
 	Setting,
 	Share,
 	Sunny,
@@ -39,6 +40,15 @@ import { richTextToPlainText, sanitizeRichText } from './utils/richText'
 
 type Role = 'host' | 'player'
 type Verdict = 'yes' | 'no' | 'both' | 'irrelevant'
+type QuestionFilter =
+	| 'all'
+	| 'mine'
+	| 'important'
+	| 'yes'
+	| 'no'
+	| 'both'
+	| 'irrelevant'
+type InsightMode = 'confirmed' | 'ruledOut'
 type Difficulty = 'easy' | 'medium' | 'hard'
 type QuestionQuality = 'none' | 'helpful' | 'key' | 'breakthrough'
 type TruthGuess = 'none' | 'clue' | 'motive' | 'full'
@@ -373,6 +383,43 @@ function questionSignalTags(question: QuestionSignal) {
 	return tags
 }
 
+function escapeHtml(value: string) {
+	return value
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#039;')
+}
+
+function getQuestionSearchText(question: Question) {
+	const verdictLabel = question.verdict ? verdictLabels[question.verdict] : '待判定'
+	return [
+		question.text,
+		question.author.displayName,
+		question.author.username,
+		verdictLabel,
+		question.important ? '重要' : '',
+		...questionSignalTags(question).map(tag => tag.label),
+	]
+		.join(' ')
+		.toLowerCase()
+}
+
+function highlightQuestionText(text: string) {
+	const keyword = questionSearchText.value.trim()
+	const escapedText = escapeHtml(text)
+	if (!keyword) return escapedText
+	const escapedKeyword = escapeHtml(keyword).replace(
+		/[.*+?^${}()|[\]\\]/g,
+		'\\$&',
+	)
+	return escapedText.replace(
+		new RegExp(escapedKeyword, 'gi'),
+		match => `<mark>${match}</mark>`,
+	)
+}
+
 function getHistoryMvpUser(item: SoupHistoryItem) {
 	if (!item.mvp) return null
 	return 'user' in item.mvp ? item.mvp.user : item.mvp
@@ -401,8 +448,11 @@ const roomCodeInput = ref(getInitialRoomCode())
 const room = ref<RoomState | null>(null)
 const questionText = ref('')
 const questionInputRef = ref()
-const questionViewMode = ref<'all' | 'mine'>('all')
+const questionViewMode = ref<QuestionFilter>('all')
+const questionSearchText = ref('')
 const selectedQuestionId = ref('')
+const insightDrawerOpen = ref(false)
+const activeInsightMode = ref<InsightMode>('confirmed')
 const shareUrl = ref(window.location.href)
 const answerHidden = ref(true)
 const activePanel = ref<'host' | 'player' | 'answer' | 'canvas'>('answer')
@@ -541,11 +591,105 @@ const myQuestions = computed(() =>
 		? sortedQuestions.value.filter(question => question.author.id === user.value?.id)
 		: [],
 )
-const visibleQuestions = computed(() =>
-	questionViewMode.value === 'mine' ? myQuestions.value : sortedQuestions.value,
-)
 const importantQuestions = computed(() =>
 	sortedQuestions.value.filter(question => hasImportantSignal(question)),
+)
+const confirmedQuestions = computed(() =>
+	sortedQuestions.value.filter(question => question.verdict === 'yes'),
+)
+const ruledOutQuestions = computed(() =>
+	sortedQuestions.value.filter(question => question.verdict === 'no'),
+)
+const confirmedPreviewQuestions = computed(() => confirmedQuestions.value.slice(0, 4))
+const ruledOutPreviewQuestions = computed(() => ruledOutQuestions.value.slice(0, 4))
+const questionFilterOptions = computed<
+	Array<{ value: QuestionFilter; label: string; count: number; disabled?: boolean }>
+>(() => [
+	{ value: 'all', label: '全部', count: sortedQuestions.value.length },
+	{
+		value: 'important',
+		label: '重要',
+		count: importantQuestions.value.length,
+	},
+	{
+		value: 'mine',
+		label: '我的',
+		count: myQuestions.value.length,
+		disabled: !user.value,
+	},
+	{
+		value: 'yes',
+		label: verdictLabels.yes,
+		count: sortedQuestions.value.filter(question => question.verdict === 'yes')
+			.length,
+	},
+	{
+		value: 'no',
+		label: verdictLabels.no,
+		count: sortedQuestions.value.filter(question => question.verdict === 'no')
+			.length,
+	},
+	{
+		value: 'both',
+		label: verdictLabels.both,
+		count: sortedQuestions.value.filter(question => question.verdict === 'both')
+			.length,
+	},
+	{
+		value: 'irrelevant',
+		label: verdictLabels.irrelevant,
+		count: sortedQuestions.value.filter(
+			question => question.verdict === 'irrelevant',
+		).length,
+	},
+])
+const filteredQuestionBase = computed(() => {
+	switch (questionViewMode.value) {
+		case 'mine':
+			return myQuestions.value
+		case 'important':
+			return importantQuestions.value
+		case 'yes':
+		case 'no':
+		case 'both':
+		case 'irrelevant':
+			return sortedQuestions.value.filter(
+				question => question.verdict === questionViewMode.value,
+			)
+		default:
+			return sortedQuestions.value
+	}
+})
+const normalizedQuestionSearch = computed(() =>
+	questionSearchText.value.trim().toLowerCase(),
+)
+const visibleQuestions = computed(() => {
+	if (!normalizedQuestionSearch.value) return filteredQuestionBase.value
+	return filteredQuestionBase.value.filter(question =>
+		getQuestionSearchText(question).includes(normalizedQuestionSearch.value),
+	)
+})
+const questionResultHint = computed(() => {
+	if (!room.value) return '进入房间后会在这里同步全部问答。'
+	const total = sortedQuestions.value.length
+	if (!total) return '还没有问题，开汤吧。'
+	const shown = visibleQuestions.value.length
+	const filterLabel =
+		questionFilterOptions.value.find(
+			option => option.value === questionViewMode.value,
+		)?.label ?? '全部'
+	const searchSuffix = normalizedQuestionSearch.value
+		? `，搜索「${questionSearchText.value.trim()}」`
+		: ''
+	return `${filterLabel}${searchSuffix}：${shown} / ${total} 条`
+})
+const activeInsightTitle = computed(() =>
+	activeInsightMode.value === 'confirmed' ? '已确认' : '已排除',
+)
+const activeInsightQuestions = computed(() =>
+	activeInsightMode.value === 'confirmed'
+		? confirmedQuestions.value
+		: ruledOutQuestions.value,
 )
 const memberStats = computed<MemberStats[]>(() => {
 	const byId = new Map<string, MemberStats>()
@@ -644,11 +788,6 @@ const mvpImportantQuestions = computed<Question[]>(() =>
 			(a, b) =>
 				new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
 		),
-)
-const onlineHint = computed(() =>
-	room.value
-		? `当前状态：${socketStatus.value}`
-		: '登录后可创建房间或输入房间号加入。',
 )
 const activeBackgroundImage = computed(
 	() => ambienceDraft.backgroundImageDataUrl,
@@ -1181,6 +1320,24 @@ function resetRoundState(nextRoom?: RoomState) {
 	selectedQuestionId.value = ''
 	answerHidden.value = true
 	nextTick(() => restoreCanvas(''))
+}
+
+function revealQuestion(questionId: string) {
+	questionViewMode.value = 'all'
+	questionSearchText.value = ''
+	insightDrawerOpen.value = false
+	selectedQuestionId.value = questionId
+	nextTick(() => {
+		const target = [...document.querySelectorAll<HTMLElement>('.question-item')].find(
+			element => element.dataset.questionId === questionId,
+		)
+		target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+	})
+}
+
+function openInsightDrawer(mode: InsightMode) {
+	activeInsightMode.value = mode
+	insightDrawerOpen.value = true
 }
 
 function getQuestionSortTime(question: Question) {
@@ -2270,23 +2427,90 @@ function formatTime(time: string) {
 						<div class="title-with-icon">
 							<EditPen /><strong>实时问答</strong>
 						</div>
-						<span class="subtle">{{ onlineHint }}</span>
+						<span class="subtle">{{ questionResultHint }}</span>
 					</div>
 					<div class="qa-filter-bar">
-						<el-radio-group
-							v-model="questionViewMode"
-							size="small"
-							@change="selectedQuestionId = ''"
-						>
-							<el-radio-button label="all">
-								全部
-								<span>{{ sortedQuestions.length }}</span>
-							</el-radio-button>
-							<el-radio-button label="mine" :disabled="!user">
-								我的发言
-								<span>{{ myQuestions.length }}</span>
-							</el-radio-button>
-						</el-radio-group>
+						<div class="filter-scroll">
+							<button
+								v-for="option in questionFilterOptions"
+								:key="option.value"
+								:class="[
+									'filter-chip',
+									{ active: questionViewMode === option.value },
+								]"
+								type="button"
+								:disabled="option.disabled"
+								@click="
+									questionViewMode = option.value;
+									selectedQuestionId = ''
+								"
+							>
+								<span>{{ option.label }}</span><b>{{ option.count }}</b>
+							</button>
+						</div>
+						<el-input
+							v-model="questionSearchText"
+							class="qa-search"
+							clearable
+							:prefix-icon="Search"
+							placeholder="搜索问题、玩家、判定或线索标签"
+							@clear="selectedQuestionId = ''"
+							@input="selectedQuestionId = ''"
+						/>
+					</div>
+					<div class="qa-insight-board">
+						<section class="confirmed">
+							<header class="insight-card-head">
+								<div>
+									<strong>已确认</strong><small>主持人回答“是”</small>
+								</div>
+								<span>{{ confirmedQuestions.length }}</span>
+							</header>
+							<p v-if="!confirmedQuestions.length">暂无“是”的结论</p>
+							<button
+								v-for="question in confirmedPreviewQuestions"
+								:key="question.id"
+								class="insight-question"
+								type="button"
+								@click="revealQuestion(question.id)"
+							>
+								<span>{{ question.text }}</span><time>{{ formatTime(question.createdAt) }}</time>
+							</button>
+							<button
+								v-if="confirmedQuestions.length > confirmedPreviewQuestions.length"
+								class="insight-more"
+								type="button"
+								@click="openInsightDrawer('confirmed')"
+							>
+								查看更多 {{ confirmedQuestions.length }} 条
+							</button>
+						</section>
+						<section class="ruled-out">
+							<header class="insight-card-head">
+								<div>
+									<strong>已排除</strong><small>主持人回答“不是”</small>
+								</div>
+								<span>{{ ruledOutQuestions.length }}</span>
+							</header>
+							<p v-if="!ruledOutQuestions.length">暂无“不是”的结论</p>
+							<button
+								v-for="question in ruledOutPreviewQuestions"
+								:key="question.id"
+								class="insight-question"
+								type="button"
+								@click="revealQuestion(question.id)"
+							>
+								<span>{{ question.text }}</span><time>{{ formatTime(question.createdAt) }}</time>
+							</button>
+							<button
+								v-if="ruledOutQuestions.length > ruledOutPreviewQuestions.length"
+								class="insight-more"
+								type="button"
+								@click="openInsightDrawer('ruledOut')"
+							>
+								查看更多 {{ ruledOutQuestions.length }} 条
+							</button>
+						</section>
 					</div>
 					<div class="ask-row">
 						<el-input
@@ -2310,14 +2534,15 @@ function formatTime(time: string) {
 						<el-empty
 							v-if="!visibleQuestions.length"
 							:description="
-								questionViewMode === 'mine'
-									? '本局还没有你的发言'
+								sortedQuestions.length
+									? '没有匹配的问答，换个筛选或关键词试试。'
 									: '还没有问题，开汤吧。'
 							"
 						/>
 						<article
 							v-for="question in visibleQuestions"
 							:key="question.id"
+							:data-question-id="question.id"
 							:class="[
 								'question-item',
 								{ selected: selectedQuestionId === question.id },
@@ -2344,7 +2569,7 @@ function formatTime(time: string) {
 									>
 									<time>{{ formatTime(question.createdAt) }}</time>
 								</div>
-								<p>{{ question.text }}</p>
+								<p v-html="highlightQuestionText(question.text)" />
 								<div
 									v-if="
 										question.quality !== 'none' ||
@@ -3229,6 +3454,45 @@ function formatTime(time: string) {
 								>删除</el-button
 							>
 						</span>
+					</button>
+				</div>
+			</el-drawer>
+			<el-drawer
+				v-model="insightDrawerOpen"
+				:direction="soupDrawerDirection"
+				:size="isMobile ? '72%' : '460px'"
+				class="insight-drawer"
+				:title="activeInsightTitle"
+			>
+				<div class="insight-drawer-list">
+					<el-empty
+						v-if="!activeInsightQuestions.length"
+						:description="activeInsightTitle + '暂无内容'"
+						:image-size="72"
+					/>
+					<button
+						v-for="question in activeInsightQuestions"
+						v-else
+						:key="question.id"
+						class="insight-drawer-item"
+						type="button"
+						@click="revealQuestion(question.id)"
+					>
+						<span class="insight-drawer-meta">
+							<el-avatar :size="24" :src="question.author.avatarDataUrl">{{
+								question.author.displayName.slice(0, 1)
+							}}</el-avatar>
+							<strong>{{ question.author.displayName }}</strong>
+							<time>{{ formatTime(question.createdAt) }}</time>
+						</span>
+						<span class="insight-drawer-text">{{ question.text }}</span>
+						<el-tag
+							v-if="question.verdict"
+							:type="verdictTypes[question.verdict]"
+							effect="dark"
+							round
+							>{{ verdictLabels[question.verdict] }}</el-tag
+						>
 					</button>
 				</div>
 			</el-drawer>
