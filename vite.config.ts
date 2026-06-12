@@ -1,21 +1,78 @@
-import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
-import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import { defineConfig } from 'vite'
 import path from 'path'
 import vue from '@vitejs/plugin-vue'
+
+const elementPlusComponentDirs: Record<string, string> = {
+	ElAvatar: 'avatar',
+	ElButton: 'button',
+	ElCheckbox: 'checkbox',
+	ElColorPicker: 'color-picker',
+	ElConfigProvider: 'config-provider',
+	ElDialog: 'dialog',
+	ElDrawer: 'drawer',
+	ElDropdown: 'dropdown',
+	ElDropdownItem: 'dropdown',
+	ElDropdownMenu: 'dropdown',
+	ElEmpty: 'empty',
+	ElForm: 'form',
+	ElFormItem: 'form',
+	ElInput: 'input',
+	ElOption: 'select',
+	ElRadio: 'radio',
+	ElRadioButton: 'radio',
+	ElRadioGroup: 'radio',
+	ElRate: 'rate',
+	ElSegmented: 'segmented',
+	ElSelect: 'select',
+	ElSlider: 'slider',
+	ElSwitch: 'switch',
+	ElTag: 'tag',
+	ElTooltip: 'tooltip',
+	ElUpload: 'upload',
+}
+
+function ElementPlusDirectResolver() {
+	return {
+		type: 'component' as const,
+		resolve(name: string) {
+			const dir = elementPlusComponentDirs[name]
+			if (!dir) return undefined
+			return {
+				name,
+				from: `element-plus/es/components/${dir}/index.mjs`,
+				sideEffects: [
+					'element-plus/es/components/base/style/css',
+					`element-plus/es/components/${dir}/style/css`,
+				],
+			}
+		},
+	}
+}
 
 // https://vite.dev/config/
 export default defineConfig({
 	plugins: [
 		vue(),
-		AutoImport({
-			resolvers: [ElementPlusResolver()],
-		}),
 		Components({
-			resolvers: [ElementPlusResolver()],
+			resolvers: [ElementPlusDirectResolver()],
 		}),
 	],
+	build: {
+		rollupOptions: {
+			output: {
+				manualChunks(id) {
+					if (!id.includes('node_modules')) return undefined
+					if (id.includes('/element-plus/')) return 'element-plus'
+					if (id.includes('/@element-plus/icons-vue/')) return 'element-icons'
+					if (id.includes('/socket.io-client/') || id.includes('/engine.io-client/')) {
+						return 'socket-vendor'
+					}
+					return 'vendor'
+				},
+			},
+		},
+	},
 	server: {
 		port: 5555,
 		proxy: {
