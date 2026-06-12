@@ -10,6 +10,7 @@
   --danger: #c2410c;
   --shadow: 0 24px 80px rgba(15, 23, 42, 0.14);
   --canvas: #fff;
+  --primaryColor: #409eff;
   color: var(--text);
   background: var(--bg);
   font-family:
@@ -312,6 +313,14 @@ textarea {
   width: 18px;
   height: 18px;
   color: var(--accent);
+}
+
+.qa-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .section-head h2 {
@@ -846,7 +855,8 @@ textarea {
 }
 
 .filter-chip.active {
-  background: var(--accent);
+  // background: var(--accent);
+  background: var(--primaryColor);
   color: white;
 }
 
@@ -871,12 +881,20 @@ textarea {
   margin-bottom: 14px;
 }
 
+.qa-mobile-dock {
+  display: none;
+}
+
+.mobile-my-questions {
+  display: none;
+}
+
 .qa-insight-board section {
   position: relative;
   display: grid;
-  align-content: start;
+  align-content: center;
   gap: 8px;
-  min-height: 178px;
+  min-height: 60px;
   overflow: hidden;
   padding: 13px;
   border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
@@ -885,6 +903,7 @@ textarea {
     linear-gradient(180deg, color-mix(in srgb, var(--surface-strong) 88%, transparent), color-mix(in srgb, var(--surface-strong) 66%, transparent)),
     color-mix(in srgb, var(--surface-strong) 76%, transparent);
   box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 34%, transparent);
+  cursor: pointer;
 }
 
 .qa-insight-board section::before {
@@ -919,7 +938,13 @@ textarea {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--text);
+  text-align: left;
+  cursor: pointer;
 }
 
 .insight-card-head div {
@@ -951,70 +976,6 @@ textarea {
   font-weight: 900;
 }
 
-.qa-insight-board p {
-  margin: 0;
-  padding: 10px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.insight-question {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  width: 100%;
-  overflow: hidden;
-  min-height: 32px;
-  padding: 7px 8px;
-  border: 0;
-  border-radius: 8px;
-  color: var(--text);
-  background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background 0.16s ease,
-    color 0.16s ease;
-}
-
-.insight-question span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  font-weight: 760;
-}
-
-.insight-question time {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.insight-question:hover {
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface-strong));
-  color: var(--accent);
-}
-
-.insight-more {
-  justify-self: start;
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
-  border-radius: 999px;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-  font-size: 12px;
-  font-weight: 900;
-  cursor: pointer;
-}
-
-.insight-more:hover {
-  background: var(--accent);
-  color: white;
-}
 
 .insight-drawer .el-drawer__body {
   padding: 12px;
@@ -1067,6 +1028,604 @@ textarea {
 
 .insight-drawer-item .el-tag {
   justify-self: start;
+}
+
+.thought-board-drawer .el-drawer__body {
+  padding: 0 16px 16px;
+}
+
+.thought-board-shell {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+}
+
+.thought-resize-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 22px;
+  margin: -4px 0 0;
+  cursor: ns-resize;
+  user-select: none;
+}
+
+.thought-resize-handle span {
+  width: 76px;
+  height: 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 34%, transparent);
+}
+
+.thought-resize-handle button {
+  min-height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-strong) 76%, transparent);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.thought-resize-handle button:hover {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--line));
+}
+
+.thought-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.72fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 78%, transparent);
+}
+
+.thought-counts,
+.thought-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.thought-counts span {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-strong) 80%, transparent);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.thought-actions {
+  justify-content: flex-end;
+}
+
+.thought-actions .el-input {
+  width: min(260px, 100%);
+}
+
+.thought-actions .el-button+.el-button {
+  margin-left: 0;
+}
+
+.thought-reference-fab {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+  display: inline-flex;
+  width: 46px;
+  height: 46px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--line));
+  border-radius: 999px;
+  color: white;
+  background: var(--accent);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.22);
+  cursor: pointer;
+}
+
+.thought-reference-fab svg {
+  width: 21px;
+  height: 21px;
+}
+
+.thought-reference-fab:hover {
+  background: color-mix(in srgb, var(--accent) 86%, var(--gold));
+}
+
+.thought-reference-popper {
+  max-width: calc(100vw - 28px);
+  border-radius: 8px;
+  box-shadow: 0 18px 46px rgba(15, 23, 42, 0.18);
+}
+
+.thought-reference-pop {
+  display: grid;
+  gap: 12px;
+  max-height: min(58vh, 430px);
+  overflow: auto;
+}
+
+.thought-reference-block {
+  display: grid;
+  gap: 8px;
+}
+
+.thought-reference-block strong {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.thought-reference-block p {
+  max-height: 170px;
+  overflow: auto;
+  margin: 0;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-strong) 78%, transparent);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.thought-style-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 80%, transparent);
+}
+
+.thought-style-tools>span {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.thought-style-tools label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.thought-style-color {
+  width: 34px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 86%, transparent);
+  cursor: pointer;
+}
+
+.thought-style-size {
+  width: 58px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: 0;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
+  font-weight: 900;
+}
+
+.thought-link-tip {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px dashed color-mix(in srgb, var(--accent) 38%, var(--line));
+  border-radius: 8px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.thought-link-tip.idle {
+  color: var(--muted);
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--surface-strong) 64%, transparent);
+}
+
+.thought-canvas-wrap {
+  min-height: 560px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in srgb, var(--accent) 8%, transparent) 1px, transparent 1px),
+    color-mix(in srgb, var(--surface-strong) 64%, transparent);
+  background-size: 28px 28px;
+}
+
+.thought-canvas {
+  position: relative;
+  width: 100%;
+  min-height: 100%;
+}
+
+.thought-links {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  min-width: 100%;
+  pointer-events: auto;
+}
+
+.thought-links path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--accent) 54%, var(--muted));
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 7 7;
+  pointer-events: stroke;
+  cursor: text;
+}
+
+.thought-links path.selected {
+  stroke: var(--gold);
+  stroke-width: 3;
+  stroke-dasharray: 0;
+}
+
+.thought-links path.preview {
+  stroke: var(--gold);
+  stroke-width: 3;
+  stroke-dasharray: 0;
+  pointer-events: none;
+}
+
+.thought-link-label {
+  position: absolute;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 22px;
+  align-items: center;
+  width: 136px;
+  min-height: 34px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  cursor: text;
+  user-select: none;
+}
+
+.thought-link-label.selected {
+  border-color: color-mix(in srgb, var(--gold) 70%, var(--line));
+  box-shadow: 0 10px 24px rgba(245, 158, 11, 0.18);
+}
+
+.thought-link-label span {
+  overflow: hidden;
+  padding: 0 4px 0 10px;
+  color: currentColor;
+  font-size: inherit;
+  font-weight: 900;
+  line-height: 32px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thought-link-label input {
+  min-width: 0;
+  height: 32px;
+  padding: 0 4px 0 10px;
+  border: 0;
+  outline: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: currentColor;
+  font-size: inherit;
+  font-weight: 800;
+}
+
+.thought-link-label button {
+  width: 22px;
+  height: 22px;
+  margin-right: 5px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.thought-link-label button:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.thought-text {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  min-width: 96px;
+  max-width: 280px;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 70%, transparent);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.thought-text.selected,
+.thought-text.editing {
+  z-index: 9;
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+}
+
+.thought-text span {
+  overflow-wrap: anywhere;
+  color: currentColor;
+  font-size: inherit;
+  font-weight: 900;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+.thought-text textarea {
+  min-width: 140px;
+  max-width: 240px;
+  min-height: 58px;
+  padding: 6px 7px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
+  border-radius: 8px;
+  outline: 0;
+  color: currentColor;
+  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+  font: inherit;
+  font-weight: 900;
+  line-height: 1.35;
+  resize: both;
+  user-select: text;
+}
+
+.thought-text button {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.thought-text button:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.thought-node {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 92%, transparent);
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  z-index: 4;
+}
+
+.thought-node.selected {
+  border-color: color-mix(in srgb, var(--accent) 58%, var(--line));
+  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.18);
+  z-index: 8;
+}
+
+.thought-node.important {
+  border-color: color-mix(in srgb, var(--gold) 42%, var(--line));
+}
+
+.thought-node.yes {
+  border-color: color-mix(in srgb, #10b981 42%, var(--line));
+}
+
+.thought-node.no {
+  border-color: color-mix(in srgb, #ef4444 38%, var(--line));
+}
+
+.thought-node.custom {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--line));
+}
+
+.thought-node.link-source {
+  outline: 3px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  outline-offset: 3px;
+  z-index: 9;
+}
+
+.thought-node.link-target {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--gold) 22%, transparent);
+  z-index: 9;
+}
+
+.thought-connector {
+  position: absolute;
+  z-index: 10;
+  width: 18px;
+  height: 18px;
+  opacity: 0;
+  padding: 0;
+  border: 2px solid color-mix(in srgb, var(--surface-strong) 88%, transparent);
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.22);
+  cursor: crosshair;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  transition:
+    opacity 0.16s ease,
+    background 0.16s ease,
+    transform 0.16s ease;
+}
+
+.thought-connector.top {
+  top: 0;
+  left: 50%;
+}
+
+.thought-connector.left {
+  top: 50%;
+  left: 0;
+}
+
+.thought-connector.right {
+  top: 50%;
+  left: 100%;
+}
+
+.thought-connector.bottom {
+  top: 100%;
+  left: 50%;
+}
+
+.thought-node:hover .thought-connector,
+.thought-node.selected .thought-connector,
+.thought-node.link-source .thought-connector,
+.thought-node.link-target .thought-connector {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.thought-connector:hover {
+  background: var(--gold);
+  transform: translate(-50%, -50%) scale(1.12);
+}
+
+.thought-node.link-target .thought-connector {
+  background: var(--gold);
+}
+
+.thought-node header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.thought-node header span {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 8px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.thought-node.important header span {
+  color: var(--gold);
+  background: color-mix(in srgb, var(--gold) 14%, transparent);
+}
+
+.thought-node.yes header span {
+  color: #059669;
+  background: rgba(16, 185, 129, 0.13);
+}
+
+.thought-node.no header span {
+  color: #dc2626;
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.thought-node header button,
+.thought-node footer button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.thought-node header button {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.thought-node header button:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.thought-node textarea {
+  width: 100%;
+  min-height: 64px;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 720;
+  line-height: 1.52;
+  user-select: text;
+}
+
+.thought-node footer {
+  padding-top: 2px;
+  border-top: 1px dashed var(--line);
+}
+
+.thought-node footer button {
+  padding: 0;
+  color: var(--accent);
+  font-size: 12px;
 }
 
 .question-item {
@@ -2273,7 +2832,7 @@ canvas.readonly {
 
   .app-shell {
     width: 100%;
-    padding: 14px 10px calc(104px + env(safe-area-inset-bottom));
+    padding: 14px 10px calc(184px + env(safe-area-inset-bottom));
   }
 
   .room-backdrop {
@@ -2620,17 +3179,12 @@ canvas.readonly {
 
   .qa-insight-board section {
     flex: 0 0 84%;
-    min-height: 164px;
+    min-height: 60px;
     padding: 10px;
   }
 
   .insight-card-head strong {
     font-size: 13px;
-  }
-
-  .insight-question {
-    min-height: 34px;
-    padding: 7px 8px;
   }
 
   .insight-drawer .el-drawer__body {
@@ -2641,11 +3195,192 @@ canvas.readonly {
     padding: 11px;
   }
 
+  .qa-head-actions {
+    justify-content: flex-start;
+  }
+
+  .thought-board-drawer .el-drawer__body {
+    padding: 0 10px 10px;
+  }
+
+  .thought-board-shell {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .thought-resize-handle {
+    display: none;
+  }
+
+  .thought-toolbar {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 9px;
+  }
+
+  .thought-counts {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .thought-counts::-webkit-scrollbar {
+    display: none;
+  }
+
+  .thought-counts span {
+    flex: 0 0 auto;
+  }
+
+  .thought-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 7px;
+  }
+
+  .thought-actions .el-input {
+    width: 100%;
+  }
+
+  .thought-actions .el-button {
+    min-width: 44px;
+    padding: 0 9px;
+  }
+
+  .thought-reference-fab {
+    right: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom));
+    width: 44px;
+    height: 44px;
+  }
+
+  .thought-canvas-wrap {
+    min-height: 420px;
+  }
+
+  .thought-link-label {
+    width: 124px;
+  }
+
+  .thought-node {
+    padding: 9px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+  }
+
   .ask-row {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 76px;
     gap: 8px;
     align-items: center;
+  }
+
+  .desktop-ask-row {
+    display: none;
+  }
+
+  .qa-mobile-dock {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 80;
+    display: grid;
+    gap: 8px;
+    padding: 9px 10px calc(10px + env(safe-area-inset-bottom));
+    border-top: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    box-shadow: 0 -16px 36px rgba(15, 23, 42, 0.14);
+    backdrop-filter: blur(20px) saturate(1.08);
+  }
+
+  .mobile-my-questions {
+    display: grid;
+    gap: 6px;
+    overflow: hidden;
+  }
+
+  .mobile-my-question-list {
+    display: grid;
+    gap: 6px;
+    max-height: 108px;
+    overflow: auto;
+    scrollbar-width: none;
+  }
+
+  .mobile-my-question-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-ask-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 30px;
+    padding: 0 9px;
+    border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--line));
+    border-radius: 8px;
+    color: var(--muted);
+    background: color-mix(in srgb, var(--surface-strong) 76%, transparent);
+    font-size: 12px;
+    font-weight: 900;
+  }
+
+  .mobile-ask-toggle b {
+    color: var(--accent);
+    font-size: 12px;
+  }
+
+  .mobile-my-questions.collapsed {
+    gap: 0;
+  }
+
+  .mobile-my-question {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    width: 100%;
+    min-height: 34px;
+    padding: 7px 9px;
+    border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--line));
+    border-radius: 8px;
+    color: var(--text);
+    background: color-mix(in srgb, var(--surface-strong) 84%, transparent);
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+    text-align: left;
+  }
+
+  .mobile-my-question-text {
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 820;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-my-question-state {
+    display: inline-flex;
+    min-height: 22px;
+    align-items: center;
+    padding: 0 8px;
+    border-radius: 999px;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    font-size: 11px;
+    font-weight: 900;
+    white-space: nowrap;
+  }
+
+  .mobile-sticky-ask {
+    padding: 0;
+  }
+
+  .mobile-sticky-ask .el-input__wrapper {
+    min-height: 44px;
+  }
+
+  .mobile-sticky-ask .el-button {
+    min-height: 44px;
   }
 
   .ask-row .el-button {

@@ -10,6 +10,7 @@ import {
 	Headset,
 	Hide,
 	House,
+	// InfoFilled,
 	Moon,
 	Picture,
 	Plus,
@@ -49,6 +50,8 @@ type QuestionFilter =
 	| 'both'
 	| 'irrelevant'
 type InsightMode = 'confirmed' | 'ruledOut'
+type ThoughtNodeKind = 'important' | 'yes' | 'no' | 'custom'
+type ThoughtPortSide = 'top' | 'right' | 'bottom' | 'left'
 type Difficulty = 'easy' | 'medium' | 'hard'
 type QuestionQuality = 'none' | 'helpful' | 'key' | 'breakthrough'
 type TruthGuess = 'none' | 'clue' | 'motive' | 'full'
@@ -86,6 +89,75 @@ interface Question {
 	author: AuthUser
 	createdAt: string
 	answeredAt?: string | null
+}
+
+interface ThoughtNode {
+	id: string
+	sourceQuestionId?: string
+	kind: ThoughtNodeKind
+	text: string
+	x: number
+	y: number
+	width: number
+	height: number
+}
+
+interface ThoughtLink {
+	id: string
+	from: string
+	to: string
+	fromSide?: ThoughtPortSide
+	toSide?: ThoughtPortSide
+	label: string
+	color?: string
+	fontSize?: number
+}
+
+interface ThoughtText {
+	id: string
+	text: string
+	x: number
+	y: number
+	color: string
+	fontSize: number
+}
+
+interface ThoughtBoardData {
+	nodes: ThoughtNode[]
+	links: ThoughtLink[]
+	texts: ThoughtText[]
+}
+
+interface ThoughtDragState {
+	id: string
+	startX: number
+	startY: number
+	originX: number
+	originY: number
+}
+
+interface ThoughtResizeState {
+	startY: number
+	startHeight: number
+}
+
+interface ThoughtLinkDragState {
+	from: string
+	fromSide: ThoughtPortSide
+	startX: number
+	startY: number
+	x: number
+	y: number
+	snapNodeId?: string
+	snapSide?: ThoughtPortSide
+}
+
+interface ThoughtTextDragState {
+	id: string
+	startX: number
+	startY: number
+	originX: number
+	originY: number
 }
 
 interface RoomAmbience {
@@ -229,8 +301,15 @@ const STORAGE_TOKEN = 'turtle-soup:token'
 const STORAGE_THEME = 'turtle-soup:theme'
 const STORAGE_AMBIENCE_PREFIX = 'turtle-soup:ambience:'
 const STORAGE_USE_HOST_BACKGROUND_PREFIX = 'turtle-soup:host-background:'
+const STORAGE_THOUGHT_BOARD_PREFIX = 'turtle-soup:thought-board:'
 const MAX_BACKGROUND_BYTES = 5 * 1024 * 1024
 const MAX_MUSIC_BYTES = 12 * 1024 * 1024
+const THOUGHT_BOARD_WIDTH = 1360
+const THOUGHT_BOARD_HEIGHT = 1120
+const THOUGHT_NODE_WIDTH = 220
+const THOUGHT_NODE_HEIGHT = 116
+const DEFAULT_THOUGHT_TEXT_COLOR = '#0f766e'
+const DEFAULT_THOUGHT_TEXT_SIZE = 18
 const DEFAULT_AMBIENCE: RoomAmbience = {
 	backgroundImageDataUrl: '',
 	backgroundPreset: 'light',
@@ -277,12 +356,12 @@ const verdictLabels: Record<Verdict, string> = {
 }
 
 const verdictTypes: Record<Verdict, 'success' | 'danger' | 'warning' | 'info'> =
-	{
-		yes: 'success',
-		no: 'danger',
-		both: 'warning',
-		irrelevant: 'info',
-	}
+{
+	yes: 'success',
+	no: 'danger',
+	both: 'warning',
+	irrelevant: 'info',
+}
 
 const difficultyLabels: Record<Difficulty, string> = {
 	easy: '入门',
@@ -453,6 +532,22 @@ const questionSearchText = ref('')
 const selectedQuestionId = ref('')
 const insightDrawerOpen = ref(false)
 const activeInsightMode = ref<InsightMode>('confirmed')
+const thoughtBoardOpen = ref(false)
+// const thoughtReferenceOpen = ref(true)
+const thoughtNodes = ref<ThoughtNode[]>([])
+const thoughtLinks = ref<ThoughtLink[]>([])
+const thoughtTexts = ref<ThoughtText[]>([])
+const thoughtDraftText = ref('')
+const selectedThoughtNodeId = ref('')
+const selectedThoughtLinkId = ref('')
+const editingThoughtLinkId = ref('')
+const selectedThoughtTextId = ref('')
+const editingThoughtTextId = ref('')
+const draggingThoughtNode = ref<ThoughtDragState | null>(null)
+const draggingThoughtLink = ref<ThoughtLinkDragState | null>(null)
+const draggingThoughtText = ref<ThoughtTextDragState | null>(null)
+const resizingThoughtBoard = ref<ThoughtResizeState | null>(null)
+const thoughtBoardHeight = ref(100)
 const shareUrl = ref(window.location.href)
 const answerHidden = ref(true)
 const activePanel = ref<'host' | 'player' | 'answer' | 'canvas'>('answer')
@@ -492,6 +587,7 @@ const customSoupOpen = ref(false)
 const soupManagerOpen = ref(false)
 const editingSoupId = ref('')
 const isMobile = ref(false)
+const mobileAskExpanded = ref(true)
 const ambienceServerUnsupported = ref(false)
 const ambiencePersistWarned = ref(false)
 const customSoup = reactive({
@@ -521,14 +617,14 @@ const authRules = computed<FormRules<typeof authForm>>(() => ({
 	displayName:
 		authMode.value === 'register'
 			? [
-					{ required: true, message: '请输入昵称', trigger: 'blur' },
-					{
-						min: 1,
-						max: 24,
-						message: '昵称长度为 1-24 个字符',
-						trigger: 'blur',
-					},
-				]
+				{ required: true, message: '请输入昵称', trigger: 'blur' },
+				{
+					min: 1,
+					max: 24,
+					message: '昵称长度为 1-24 个字符',
+					trigger: 'blur',
+				},
+			]
 			: [],
 	username: [
 		{ required: true, message: '请输入用户名', trigger: 'blur' },
@@ -600,8 +696,6 @@ const confirmedQuestions = computed(() =>
 const ruledOutQuestions = computed(() =>
 	sortedQuestions.value.filter(question => question.verdict === 'no'),
 )
-const confirmedPreviewQuestions = computed(() => confirmedQuestions.value.slice(0, 4))
-const ruledOutPreviewQuestions = computed(() => ruledOutQuestions.value.slice(0, 4))
 const questionFilterOptions = computed<
 	Array<{ value: QuestionFilter; label: string; count: number; disabled?: boolean }>
 >(() => [
@@ -691,6 +785,87 @@ const activeInsightQuestions = computed(() =>
 		? confirmedQuestions.value
 		: ruledOutQuestions.value,
 )
+const mobileRecentMyQuestions = computed(() => myQuestions.value.slice(0, 3))
+const thoughtSourceQuestions = computed(() =>
+	sortedQuestions.value.filter(
+		question =>
+			question.important ||
+			question.verdict === 'yes' ||
+			question.verdict === 'no',
+	),
+)
+const thoughtNodeStats = computed(() => ({
+	important: thoughtNodes.value.filter(node => node.kind === 'important').length,
+	yes: thoughtNodes.value.filter(node => node.kind === 'yes').length,
+	no: thoughtNodes.value.filter(node => node.kind === 'no').length,
+	custom: thoughtNodes.value.filter(node => node.kind === 'custom').length,
+}))
+const thoughtBoardWidth = computed(() => getThoughtBoardWidth())
+const thoughtBoardDrawerSize = computed(() =>
+	isMobile.value ? '88%' : `${thoughtBoardHeight.value}%`,
+)
+const thoughtLinkViews = computed(() =>
+	thoughtLinks.value
+		.map(link => ({ link, geometry: thoughtLinkGeometry(link) }))
+		.filter(
+			(
+				item,
+			): item is {
+				link: ThoughtLink
+				geometry: NonNullable<ReturnType<typeof thoughtLinkGeometry>>
+			} => Boolean(item.geometry),
+		),
+)
+const selectedThoughtStyleTarget = computed(() => {
+	if (selectedThoughtTextId.value) {
+		const text = thoughtTexts.value.find(item => item.id === selectedThoughtTextId.value)
+		return text ? { type: 'text' as const, item: text } : null
+	}
+	if (selectedThoughtLinkId.value) {
+		const link = thoughtLinks.value.find(item => item.id === selectedThoughtLinkId.value)
+		return link ? { type: 'link' as const, item: link } : null
+	}
+	return null
+})
+const selectedThoughtColor = computed({
+	get: () =>
+		selectedThoughtStyleTarget.value?.item.color ?? DEFAULT_THOUGHT_TEXT_COLOR,
+	set: value => updateSelectedThoughtStyle({ color: value }),
+})
+const selectedThoughtFontSize = computed({
+	get: () =>
+		selectedThoughtStyleTarget.value?.item.fontSize ??
+		DEFAULT_THOUGHT_TEXT_SIZE,
+	set: value => updateSelectedThoughtStyle({ fontSize: value }),
+})
+const thoughtLinkPreview = computed(() => {
+	if (!draggingThoughtLink.value) return null
+	const start = getThoughtPortPoint(
+		draggingThoughtLink.value.from,
+		draggingThoughtLink.value.fromSide,
+	)
+	if (!start) return null
+	const end =
+		draggingThoughtLink.value.snapNodeId && draggingThoughtLink.value.snapSide
+			? getThoughtPortPoint(
+				draggingThoughtLink.value.snapNodeId,
+				draggingThoughtLink.value.snapSide,
+			)
+			: { x: draggingThoughtLink.value.x, y: draggingThoughtLink.value.y }
+	if (!end) return null
+	return {
+		x1: start.x,
+		y1: start.y,
+		x2: end.x,
+		y2: end.y,
+		path: getThoughtCurvePath(
+			start,
+			end,
+			draggingThoughtLink.value.fromSide,
+			draggingThoughtLink.value.snapSide ?? draggingThoughtLink.value.fromSide,
+		),
+	}
+})
 const memberStats = computed<MemberStats[]>(() => {
 	const byId = new Map<string, MemberStats>()
 	const onlineIds = new Set(roomMembers.value.map(member => member.userId))
@@ -850,9 +1025,9 @@ const isSelectedCurrentSoup = computed(() =>
 		selectedSoupForSwitch.value &&
 		room.value.title === selectedSoupForSwitch.value.title &&
 		sanitizeRichText(room.value.surface) ===
-			sanitizeRichText(selectedSoupForSwitch.value.surface) &&
+		sanitizeRichText(selectedSoupForSwitch.value.surface) &&
 		sanitizeRichText(room.value.answer) ===
-			sanitizeRichText(selectedSoupForSwitch.value.answer),
+		sanitizeRichText(selectedSoupForSwitch.value.answer),
 	),
 )
 const soupDrawerDirection = computed(() => (isMobile.value ? 'btt' : 'rtl'))
@@ -910,6 +1085,17 @@ watch(useHostBackground, value => {
 	)
 })
 
+watch(
+	[() => room.value?.code, () => user.value?.id],
+	() => loadThoughtBoard(),
+)
+
+watch(
+	thoughtSourceQuestions,
+	() => syncThoughtSources(false),
+	{ flush: 'post' },
+)
+
 watch(authMode, () => {
 	authFormRef.value?.clearValidate()
 })
@@ -918,6 +1104,8 @@ onMounted(async () => {
 	updateViewportState()
 	window.addEventListener('resize', resizeCanvas)
 	window.addEventListener('resize', updateViewportState)
+	window.addEventListener('pointermove', resizeThoughtBoard)
+	window.addEventListener('pointerup', stopThoughtBoardResize)
 	window.addEventListener('beforeunload', handleBeforeUnload)
 	await restoreSession()
 	if (user.value) await loadSoups()
@@ -932,6 +1120,8 @@ onBeforeUnmount(() => {
 	window.clearTimeout(roomSaveTimer)
 	window.removeEventListener('resize', resizeCanvas)
 	window.removeEventListener('resize', updateViewportState)
+	window.removeEventListener('pointermove', resizeThoughtBoard)
+	window.removeEventListener('pointerup', stopThoughtBoardResize)
 	window.removeEventListener('beforeunload', handleBeforeUnload)
 	leaveCurrentRoom()
 	socket?.disconnect()
@@ -1072,10 +1262,10 @@ async function submitAuth() {
 	const payload =
 		authMode.value === 'register'
 			? {
-					username: authForm.username,
-					password: authForm.password,
-					displayName: authForm.displayName || authForm.username,
-				}
+				username: authForm.username,
+				password: authForm.password,
+				displayName: authForm.displayName || authForm.username,
+			}
 			: { username: authForm.username, password: authForm.password }
 	authSubmitting.value = true
 	try {
@@ -1307,6 +1497,7 @@ function syncSelectedSoupFromRoom(data: RoomState) {
 }
 
 function resetRoundState(nextRoom?: RoomState) {
+	const previousRoomCode = room.value?.code
 	if (nextRoom) room.value = hydrateRoom(nextRoom)
 	if (room.value) room.value.questions = []
 	questionSortTimes.clear()
@@ -1319,6 +1510,7 @@ function resetRoundState(nextRoom?: RoomState) {
 	mvpResult.value = null
 	selectedQuestionId.value = ''
 	answerHidden.value = true
+	clearThoughtBoardStorage(previousRoomCode)
 	nextTick(() => restoreCanvas(''))
 }
 
@@ -1326,6 +1518,7 @@ function revealQuestion(questionId: string) {
 	questionViewMode.value = 'all'
 	questionSearchText.value = ''
 	insightDrawerOpen.value = false
+	thoughtBoardOpen.value = false
 	selectedQuestionId.value = questionId
 	nextTick(() => {
 		const target = [...document.querySelectorAll<HTMLElement>('.question-item')].find(
@@ -1338,6 +1531,683 @@ function revealQuestion(questionId: string) {
 function openInsightDrawer(mode: InsightMode) {
 	activeInsightMode.value = mode
 	insightDrawerOpen.value = true
+}
+
+function getThoughtBoardKey() {
+	if (!room.value) return ''
+	return getThoughtBoardKeyForRoom(room.value.code)
+}
+
+function getThoughtBoardKeyForRoom(roomCode: string) {
+	return `${STORAGE_THOUGHT_BOARD_PREFIX}${roomCode}:${user.value?.id ?? 'guest'}`
+}
+
+function clampThoughtNode(node: ThoughtNode): ThoughtNode {
+	const boardWidth = getThoughtBoardWidth()
+	return {
+		...node,
+		x: Math.max(0, Math.min(boardWidth - node.width, node.x)),
+		y: Math.max(0, Math.min(THOUGHT_BOARD_HEIGHT - node.height, node.y)),
+		width: Math.max(170, Math.min(320, node.width)),
+		height: Math.max(96, Math.min(220, node.height)),
+	}
+}
+
+function getThoughtBoardWidth() {
+	const viewportWidth =
+		typeof window === 'undefined'
+			? THOUGHT_BOARD_WIDTH
+			: Math.max(360, window.innerWidth - (isMobile.value ? 20 : 64))
+	return Math.max(THOUGHT_BOARD_WIDTH, viewportWidth)
+}
+
+function getThoughtNodeKind(question: Question): ThoughtNodeKind {
+	if (question.important) return 'important'
+	if (question.verdict === 'yes') return 'yes'
+	return 'no'
+}
+
+function createThoughtNodeFromQuestion(
+	question: Question,
+	index: number,
+): ThoughtNode {
+	const kind = getThoughtNodeKind(question)
+	const column = kind === 'important' ? 0 : kind === 'yes' ? 1 : 2
+	const row = Math.floor(index / 3)
+	const jitterX = (index % 2) * 72
+	const jitterY = (index % 3) * 44
+	return {
+		id: `question:${question.id}`,
+		sourceQuestionId: question.id,
+		kind,
+		text: question.text,
+		x: 56 + column * 380 + jitterX,
+		y: 70 + row * 250 + jitterY,
+		width: THOUGHT_NODE_WIDTH,
+		height: THOUGHT_NODE_HEIGHT,
+	}
+}
+
+function sanitizeThoughtNodes(value: unknown): ThoughtNode[] {
+	if (!Array.isArray(value)) return []
+	return value
+		.filter(item => isRecord(item) && typeof item.id === 'string')
+		.map(item =>
+			clampThoughtNode({
+				id: String(item.id),
+				sourceQuestionId:
+					typeof item.sourceQuestionId === 'string'
+						? item.sourceQuestionId
+						: undefined,
+				kind: ['important', 'yes', 'no', 'custom'].includes(String(item.kind))
+					? (String(item.kind) as ThoughtNodeKind)
+					: 'custom',
+				text: typeof item.text === 'string' ? item.text : '',
+				x: Number(item.x) || 0,
+				y: Number(item.y) || 0,
+				width: Number(item.width) || THOUGHT_NODE_WIDTH,
+				height: Number(item.height) || THOUGHT_NODE_HEIGHT,
+			}),
+		)
+}
+
+function sanitizeThoughtLinks(value: unknown): ThoughtLink[] {
+	if (!Array.isArray(value)) return []
+	const isThoughtPortSide = (side: unknown): side is ThoughtPortSide =>
+		side === 'top' || side === 'right' || side === 'bottom' || side === 'left'
+	return value
+		.filter(
+			item =>
+				isRecord(item) &&
+				typeof item.id === 'string' &&
+				typeof item.from === 'string' &&
+				typeof item.to === 'string',
+		)
+		.map(item => ({
+			id: String(item.id),
+			from: String(item.from),
+			to: String(item.to),
+			fromSide: isThoughtPortSide(item.fromSide) ? item.fromSide : 'right',
+			toSide: isThoughtPortSide(item.toSide) ? item.toSide : 'left',
+			label: typeof item.label === 'string' ? item.label : '',
+			color:
+				typeof item.color === 'string' ? item.color : DEFAULT_THOUGHT_TEXT_COLOR,
+			fontSize: Number(item.fontSize) || DEFAULT_THOUGHT_TEXT_SIZE,
+		}))
+}
+
+function sanitizeThoughtTexts(value: unknown): ThoughtText[] {
+	if (!Array.isArray(value)) return []
+	return value
+		.filter(item => isRecord(item) && typeof item.id === 'string')
+		.map(item => ({
+			id: String(item.id),
+			text: typeof item.text === 'string' ? item.text : '文字',
+			x: Math.max(0, Math.min(getThoughtBoardWidth() - 80, Number(item.x) || 0)),
+			y: Math.max(
+				0,
+				Math.min(THOUGHT_BOARD_HEIGHT - 40, Number(item.y) || 0),
+			),
+			color:
+				typeof item.color === 'string' ? item.color : DEFAULT_THOUGHT_TEXT_COLOR,
+			fontSize: Number(item.fontSize) || DEFAULT_THOUGHT_TEXT_SIZE,
+		}))
+}
+
+function sanitizeThoughtBoardData(value: unknown): ThoughtBoardData {
+	if (Array.isArray(value)) {
+		return { nodes: sanitizeThoughtNodes(value), links: [], texts: [] }
+	}
+	if (!isRecord(value)) return { nodes: [], links: [], texts: [] }
+	return {
+		nodes: sanitizeThoughtNodes(value.nodes),
+		links: sanitizeThoughtLinks(value.links),
+		texts: sanitizeThoughtTexts(value.texts),
+	}
+}
+
+function loadThoughtBoard() {
+	const key = getThoughtBoardKey()
+	if (!key) {
+		thoughtNodes.value = []
+		thoughtLinks.value = []
+		thoughtTexts.value = []
+		return
+	}
+	try {
+		const data = sanitizeThoughtBoardData(
+			JSON.parse(localStorage.getItem(key) || '[]'),
+		)
+		thoughtNodes.value = data.nodes
+		thoughtLinks.value = data.links
+		thoughtTexts.value = data.texts
+	} catch {
+		thoughtNodes.value = []
+		thoughtLinks.value = []
+		thoughtTexts.value = []
+	}
+	syncThoughtSources(false)
+}
+
+function saveThoughtBoard() {
+	const key = getThoughtBoardKey()
+	if (!key) return
+	localStorage.setItem(
+		key,
+		JSON.stringify({
+			nodes: thoughtNodes.value,
+			links: thoughtLinks.value,
+			texts: thoughtTexts.value,
+		}),
+	)
+}
+
+function syncThoughtSources(forceReset: boolean) {
+	if (!room.value) {
+		thoughtNodes.value = []
+		thoughtLinks.value = []
+		thoughtTexts.value = []
+		return
+	}
+	if (forceReset) {
+		thoughtNodes.value = []
+		thoughtLinks.value = []
+		thoughtTexts.value = []
+	}
+	const existing = new Map(
+		thoughtNodes.value
+			.filter(node => node.sourceQuestionId)
+			.map(node => [node.sourceQuestionId, node]),
+	)
+	let changed = false
+	thoughtSourceQuestions.value.forEach((question, index) => {
+		const node = existing.get(question.id)
+		if (node) {
+			const nextKind = getThoughtNodeKind(question)
+			if (node.kind !== nextKind) {
+				node.kind = nextKind
+				changed = true
+			}
+			return
+		}
+		thoughtNodes.value.push(createThoughtNodeFromQuestion(question, index))
+		changed = true
+	})
+	if (changed || forceReset) saveThoughtBoard()
+}
+
+function openThoughtBoard() {
+	if (!room.value) {
+		ElMessage.warning('请先进入房间')
+		return
+	}
+	syncThoughtSources(false)
+	thoughtBoardOpen.value = true
+}
+
+function updateThoughtNodeText(nodeId: string, text: string) {
+	const node = thoughtNodes.value.find(item => item.id === nodeId)
+	if (!node) return
+	node.text = text
+	saveThoughtBoard()
+}
+
+function addThoughtNode() {
+	if (!room.value) return ElMessage.warning('请先进入房间')
+	const text = thoughtDraftText.value.trim() || '新的推理节点'
+	const offset = thoughtNodes.value.filter(node => node.kind === 'custom').length
+	const boardWidth = getThoughtBoardWidth()
+	thoughtNodes.value.push({
+		id: `custom:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
+		kind: 'custom',
+		text,
+		x: Math.min(boardWidth - THOUGHT_NODE_WIDTH - 40, 880 + (offset % 2) * 54),
+		y: 36 + (offset % 5) * 128,
+		width: THOUGHT_NODE_WIDTH,
+		height: THOUGHT_NODE_HEIGHT,
+	})
+	thoughtDraftText.value = ''
+	saveThoughtBoard()
+}
+
+function removeThoughtNode(nodeId: string) {
+	thoughtNodes.value = thoughtNodes.value.filter(node => node.id !== nodeId)
+	thoughtLinks.value = thoughtLinks.value.filter(
+		link => link.from !== nodeId && link.to !== nodeId,
+	)
+	if (selectedThoughtNodeId.value === nodeId) selectedThoughtNodeId.value = ''
+	if (draggingThoughtLink.value?.from === nodeId) draggingThoughtLink.value = null
+	saveThoughtBoard()
+}
+
+function syncThoughtBoard() {
+	syncThoughtSources(false)
+	ElMessage.success('已同步最新线索')
+}
+
+function startThoughtBoardResize(event: PointerEvent) {
+	if (isMobile.value) return
+	resizingThoughtBoard.value = {
+		startY: event.clientY,
+		startHeight: thoughtBoardHeight.value,
+	}
+		; (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+}
+
+function resizeThoughtBoard(event: PointerEvent) {
+	if (!resizingThoughtBoard.value || isMobile.value) return
+	const viewportHeight = Math.max(window.innerHeight, 1)
+	const deltaPercent =
+		((resizingThoughtBoard.value.startY - event.clientY) / viewportHeight) *
+		100
+	thoughtBoardHeight.value = Math.max(
+		66,
+		Math.min(100, resizingThoughtBoard.value.startHeight + deltaPercent),
+	)
+}
+
+function stopThoughtBoardResize() {
+	resizingThoughtBoard.value = null
+}
+
+function maximizeThoughtBoard() {
+	thoughtBoardHeight.value = 100
+}
+
+function clearThoughtBoardStorage(roomCode = room.value?.code) {
+	const key = roomCode ? getThoughtBoardKeyForRoom(roomCode) : ''
+	if (key) localStorage.removeItem(key)
+	thoughtNodes.value = []
+	thoughtLinks.value = []
+	thoughtTexts.value = []
+	selectedThoughtNodeId.value = ''
+	selectedThoughtLinkId.value = ''
+	editingThoughtLinkId.value = ''
+	selectedThoughtTextId.value = ''
+	editingThoughtTextId.value = ''
+	draggingThoughtLink.value = null
+}
+
+function selectThoughtNode(node: ThoughtNode) {
+	selectedThoughtNodeId.value = node.id
+	selectedThoughtLinkId.value = ''
+	selectedThoughtTextId.value = ''
+}
+
+function selectThoughtLink(linkId: string) {
+	selectedThoughtLinkId.value = linkId
+	selectedThoughtNodeId.value = ''
+	selectedThoughtTextId.value = ''
+}
+
+function selectThoughtText(textId: string) {
+	selectedThoughtTextId.value = textId
+	selectedThoughtNodeId.value = ''
+	selectedThoughtLinkId.value = ''
+}
+
+function editThoughtLink(linkId: string) {
+	selectThoughtLink(linkId)
+	editingThoughtLinkId.value = linkId
+	nextTick(() => {
+		document.querySelector<HTMLInputElement>(
+			`[data-thought-link-input="${linkId}"]`,
+		)?.focus()
+	})
+}
+
+function editThoughtText(textId: string) {
+	selectThoughtText(textId)
+	draggingThoughtText.value = null
+	editingThoughtTextId.value = textId
+	nextTick(() => {
+		document.querySelector<HTMLTextAreaElement>(
+			`[data-thought-text-input="${textId}"]`,
+		)?.focus()
+	})
+}
+
+function updateSelectedThoughtStyle(patch: { color?: string; fontSize?: number }) {
+	const target = selectedThoughtStyleTarget.value
+	if (!target) return
+	if (typeof patch.color === 'string') target.item.color = patch.color
+	if (typeof patch.fontSize === 'number') {
+		target.item.fontSize = Math.max(12, Math.min(42, patch.fontSize))
+	}
+	saveThoughtBoard()
+}
+
+function updateSelectedThoughtFontSize(event: Event) {
+	const value = Number((event.target as HTMLInputElement).value)
+	if (!Number.isNaN(value)) selectedThoughtFontSize.value = value
+}
+
+function updateThoughtText(textId: string, text: string) {
+	const item = thoughtTexts.value.find(value => value.id === textId)
+	if (!item) return
+	item.text = text
+	saveThoughtBoard()
+}
+
+function removeThoughtText(textId: string) {
+	thoughtTexts.value = thoughtTexts.value.filter(item => item.id !== textId)
+	if (selectedThoughtTextId.value === textId) selectedThoughtTextId.value = ''
+	if (editingThoughtTextId.value === textId) editingThoughtTextId.value = ''
+	saveThoughtBoard()
+}
+
+function addThoughtTextAt(x: number, y: number) {
+	const id = `text:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`
+	thoughtTexts.value.push({
+		id,
+		text: '双击编辑文字',
+		x: Math.max(0, Math.min(getThoughtBoardWidth() - 160, x)),
+		y: Math.max(0, Math.min(THOUGHT_BOARD_HEIGHT - 60, y)),
+		color: DEFAULT_THOUGHT_TEXT_COLOR,
+		fontSize: DEFAULT_THOUGHT_TEXT_SIZE,
+	})
+	selectedThoughtTextId.value = id
+	editingThoughtTextId.value = id
+	selectedThoughtNodeId.value = ''
+	selectedThoughtLinkId.value = ''
+	saveThoughtBoard()
+}
+
+function handleThoughtCanvasDoubleClick(event: MouseEvent) {
+	const target = event.target as HTMLElement
+	if (target.closest('.thought-node, .thought-text, .thought-link-label')) return
+	const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
+	addThoughtTextAt(event.clientX - rect.left, event.clientY - rect.top)
+}
+
+function startThoughtTextDrag(event: PointerEvent, item: ThoughtText) {
+	const target = event.target as HTMLElement
+	if (target.closest('textarea, input, button')) return
+	if (event.detail > 1) {
+		event.preventDefault()
+		editThoughtText(item.id)
+		return
+	}
+	selectThoughtText(item.id)
+	draggingThoughtText.value = {
+		id: item.id,
+		startX: event.clientX,
+		startY: event.clientY,
+		originX: item.x,
+		originY: item.y,
+	}
+		; (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+}
+
+function moveThoughtTextDrag(event: PointerEvent) {
+	if (!draggingThoughtText.value) return
+	const item = thoughtTexts.value.find(text => text.id === draggingThoughtText.value?.id)
+	if (!item) return
+	item.x = Math.max(
+		0,
+		Math.min(
+			getThoughtBoardWidth() - 80,
+			draggingThoughtText.value.originX +
+			event.clientX -
+			draggingThoughtText.value.startX,
+		),
+	)
+	item.y = Math.max(
+		0,
+		Math.min(
+			THOUGHT_BOARD_HEIGHT - 40,
+			draggingThoughtText.value.originY +
+			event.clientY -
+			draggingThoughtText.value.startY,
+		),
+	)
+}
+
+function stopThoughtTextDrag() {
+	if (!draggingThoughtText.value) return
+	draggingThoughtText.value = null
+	saveThoughtBoard()
+}
+
+function addThoughtLink(
+	from: string,
+	to: string,
+	fromSide: ThoughtPortSide,
+	toSide: ThoughtPortSide,
+) {
+	const exists = thoughtLinks.value.some(
+		link =>
+			(link.from === from && link.to === to) ||
+			(link.from === to && link.to === from),
+	)
+	if (exists) {
+		ElMessage.warning('这两个节点已经连接过了')
+		return
+	}
+	thoughtLinks.value.push({
+		id: `link:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
+		from,
+		to,
+		fromSide,
+		toSide,
+		label: '',
+		color: DEFAULT_THOUGHT_TEXT_COLOR,
+		fontSize: DEFAULT_THOUGHT_TEXT_SIZE,
+	})
+	saveThoughtBoard()
+}
+
+function updateThoughtLinkLabel(linkId: string, label: string) {
+	const link = thoughtLinks.value.find(item => item.id === linkId)
+	if (!link) return
+	link.label = label
+	saveThoughtBoard()
+}
+
+function removeThoughtLink(linkId: string) {
+	thoughtLinks.value = thoughtLinks.value.filter(link => link.id !== linkId)
+	if (selectedThoughtLinkId.value === linkId) selectedThoughtLinkId.value = ''
+	if (editingThoughtLinkId.value === linkId) editingThoughtLinkId.value = ''
+	saveThoughtBoard()
+}
+
+function getThoughtPortPoint(nodeId: string, side: ThoughtPortSide = 'right') {
+	const node = thoughtNodes.value.find(item => item.id === nodeId)
+	if (!node) return null
+	const points: Record<ThoughtPortSide, { x: number; y: number }> = {
+		top: { x: node.x + node.width / 2, y: node.y },
+		right: { x: node.x + node.width, y: node.y + node.height / 2 },
+		bottom: { x: node.x + node.width / 2, y: node.y + node.height },
+		left: { x: node.x, y: node.y + node.height / 2 },
+	}
+	return points[side]
+}
+
+function getThoughtCurvePath(
+	from: { x: number; y: number },
+	to: { x: number; y: number },
+	fromSide: ThoughtPortSide,
+	toSide: ThoughtPortSide,
+) {
+	const distance = Math.hypot(to.x - from.x, to.y - from.y)
+	const offset = Math.max(80, Math.min(190, distance * 0.36))
+	const direction = (side: ThoughtPortSide) =>
+		({
+			top: { x: 0, y: -1 },
+			right: { x: 1, y: 0 },
+			bottom: { x: 0, y: 1 },
+			left: { x: -1, y: 0 },
+		})[side]
+	const fromDirection = direction(fromSide)
+	const toDirection = direction(toSide)
+	const c1 = {
+		x: from.x + fromDirection.x * offset,
+		y: from.y + fromDirection.y * offset,
+	}
+	const c2 = {
+		x: to.x + toDirection.x * offset,
+		y: to.y + toDirection.y * offset,
+	}
+	return `M ${from.x} ${from.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${to.x} ${to.y}`
+}
+
+function thoughtLinkGeometry(link: ThoughtLink) {
+	const fromSide = link.fromSide ?? 'right'
+	const toSide = link.toSide ?? 'left'
+	const from = getThoughtPortPoint(link.from, link.fromSide ?? 'right')
+	const to = getThoughtPortPoint(link.to, link.toSide ?? 'left')
+	if (!from || !to) return null
+	const dx = to.x - from.x
+	const dy = to.y - from.y
+	return {
+		x1: from.x,
+		y1: from.y,
+		x2: to.x,
+		y2: to.y,
+		midX: from.x + dx / 2,
+		midY: from.y + dy / 2,
+		length: Math.sqrt(dx * dx + dy * dy),
+		angle: (Math.atan2(dy, dx) * 180) / Math.PI,
+		path: getThoughtCurvePath(from, to, fromSide, toSide),
+	}
+}
+
+function getThoughtCanvasPoint(event: PointerEvent) {
+	const canvas = (event.currentTarget as HTMLElement).closest('.thought-canvas')
+	const rect = canvas?.getBoundingClientRect()
+	if (!rect) return { x: 0, y: 0 }
+	return {
+		x: event.clientX - rect.left,
+		y: event.clientY - rect.top,
+	}
+}
+
+function findThoughtPortSnap(
+	x: number,
+	y: number,
+	sourceNodeId: string,
+): Pick<ThoughtLinkDragState, 'snapNodeId' | 'snapSide'> {
+	let best:
+		| { nodeId: string; side: ThoughtPortSide; distance: number }
+		| undefined
+	thoughtNodes.value.forEach(node => {
+		if (node.id === sourceNodeId) return
+			; (['top', 'right', 'bottom', 'left'] as ThoughtPortSide[]).forEach(side => {
+				const point = getThoughtPortPoint(node.id, side)
+				if (!point) return
+				const distance = Math.hypot(point.x - x, point.y - y)
+				if (distance <= 54 && (!best || distance < best.distance)) {
+					best = { nodeId: node.id, side, distance }
+				}
+			})
+	})
+	return best ? { snapNodeId: best.nodeId, snapSide: best.side } : {}
+}
+
+function startThoughtLinkDrag(
+	event: PointerEvent,
+	node: ThoughtNode,
+	side: ThoughtPortSide,
+) {
+	selectedThoughtNodeId.value = node.id
+	const point = getThoughtPortPoint(node.id, side)
+	if (!point) return
+	draggingThoughtLink.value = {
+		from: node.id,
+		fromSide: side,
+		startX: point.x,
+		startY: point.y,
+		x: point.x,
+		y: point.y,
+	}
+		; (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+}
+
+function moveThoughtLinkDrag(event: PointerEvent) {
+	if (!draggingThoughtLink.value) return
+	const point = getThoughtCanvasPoint(event)
+	const snap = findThoughtPortSnap(
+		point.x,
+		point.y,
+		draggingThoughtLink.value.from,
+	)
+	draggingThoughtLink.value = {
+		...draggingThoughtLink.value,
+		x: point.x,
+		y: point.y,
+		...snap,
+	}
+}
+
+function stopThoughtLinkDrag() {
+	const drag = draggingThoughtLink.value
+	if (!drag) return
+	if (drag.snapNodeId && drag.snapSide) {
+		addThoughtLink(drag.from, drag.snapNodeId, drag.fromSide, drag.snapSide)
+	}
+	draggingThoughtLink.value = null
+}
+
+function startThoughtDrag(event: PointerEvent, node: ThoughtNode) {
+	const target = event.target as HTMLElement
+	if (target.closest('textarea, button')) return
+	selectedThoughtNodeId.value = node.id
+	draggingThoughtNode.value = {
+		id: node.id,
+		startX: event.clientX,
+		startY: event.clientY,
+		originX: node.x,
+		originY: node.y,
+	}
+		; (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+}
+
+function moveThoughtDrag(event: PointerEvent) {
+	if (!draggingThoughtNode.value) return
+	const node = thoughtNodes.value.find(
+		item => item.id === draggingThoughtNode.value?.id,
+	)
+	if (!node) return
+	const next = clampThoughtNode({
+		...node,
+		x:
+			draggingThoughtNode.value.originX +
+			event.clientX -
+			draggingThoughtNode.value.startX,
+		y:
+			draggingThoughtNode.value.originY +
+			event.clientY -
+			draggingThoughtNode.value.startY,
+	})
+	node.x = next.x
+	node.y = next.y
+}
+
+function stopThoughtDrag() {
+	if (!draggingThoughtNode.value) return
+	draggingThoughtNode.value = null
+	saveThoughtBoard()
+}
+
+function thoughtNodeClass(node: ThoughtNode) {
+	return [
+		'thought-node',
+		node.kind,
+		{
+			selected: selectedThoughtNodeId.value === node.id,
+			'link-source': draggingThoughtLink.value?.from === node.id,
+			'link-target': draggingThoughtLink.value?.snapNodeId === node.id,
+		},
+	]
+}
+
+function thoughtNodeLabel(kind: ThoughtNodeKind) {
+	return {
+		important: '重要',
+		yes: '是',
+		no: '不是',
+		custom: '推理',
+	}[kind]
 }
 
 function getQuestionSortTime(question: Question) {
@@ -1609,13 +2479,13 @@ function joinSocketRoom(code: string) {
 		roomCode: code,
 		user: user.value
 			? {
-					id: user.value.id,
-					username: user.value.username,
-					displayName: user.value.displayName,
-					avatarDataUrl: user.value.avatarDataUrl,
-					points: user.value.points,
-					rankTitle: user.value.rankTitle,
-				}
+				id: user.value.id,
+				username: user.value.username,
+				displayName: user.value.displayName,
+				avatarDataUrl: user.value.avatarDataUrl,
+				points: user.value.points,
+				rankTitle: user.value.rankTitle,
+			}
 			: undefined,
 	})
 }
@@ -1739,6 +2609,7 @@ async function addQuestion() {
 		)
 		questionText.value = ''
 		upsertQuestion(question)
+		if (isMobile.value) mobileAskExpanded.value = true
 		await nextTick()
 		questionInputRef.value?.focus?.()
 	} catch (error) {
@@ -2200,131 +3071,69 @@ function formatTime(time: string) {
 
 <template>
 	<el-config-provider>
-		<main
-			:class="['app-shell', { 'has-room-backdrop': room }]"
-			:style="roomBackdropStyle"
-		>
+		<main :class="['app-shell', { 'has-room-backdrop': room }]" :style="roomBackdropStyle">
 			<div class="room-backdrop" />
-			<audio
-				ref="audioRef"
-				:src="activeMusicDataUrl"
-				loop
-				@play="musicPlaying = true"
-				@pause="musicPlaying = false"
-				@ended="musicPlaying = false"
-			/>
+			<audio ref="audioRef" :src="activeMusicDataUrl" loop @play="musicPlaying = true" @pause="musicPlaying = false"
+				@ended="musicPlaying = false" />
 			<header class="app-header">
 				<div class="brand-block">
 					<p class="eyebrow">Turtle Soup Online</p>
 					<h1>海龟汤在线联机</h1>
 				</div>
 				<div class="header-actions">
-					<el-button :icon="Share" :disabled="!room" @click="copyShareUrl"
-						>邀请</el-button
-					>
-					<el-button
-						:icon="isDark ? Sunny : Moon"
-						circle
-						@click="isDark = !isDark"
-					/>
+					<el-button :icon="Share" :disabled="!room" @click="copyShareUrl">邀请</el-button>
+					<el-button :icon="isDark ? Sunny : Moon" circle @click="isDark = !isDark" />
 				</div>
 			</header>
 
 			<section class="user-strip surface-card">
 				<div v-if="user" class="current-user">
-					<el-upload
-						:show-file-list="false"
-						:before-upload="beforeAvatarUpload"
-						accept="image/*"
-					>
+					<el-upload :show-file-list="false" :before-upload="beforeAvatarUpload" accept="image/*">
 						<el-avatar :size="46" :src="user.avatarDataUrl">{{
 							user.displayName.slice(0, 1)
 						}}</el-avatar>
 					</el-upload>
 					<div class="user-copy">
-						<strong>{{ user.displayName }}</strong
-						><span
-							>@{{ user.username }} · {{ user.rankTitle }} ·
-							{{ user.points }} 分</span
-						>
+						<strong>{{ user.displayName }}</strong><span>@{{ user.username }} · {{ user.rankTitle }} ·
+							{{ user.points }} 分</span>
 					</div>
 					<el-button text type="danger" @click="logout()">退出</el-button>
 				</div>
-				<el-form
-					v-else
-					ref="authFormRef"
-					:model="authForm"
-					:rules="authRules"
-					class="auth-inline"
-					inline
-					@submit.prevent
-				>
-					<el-segmented
-						v-model="authMode"
-						:options="[
-							{ label: '登录', value: 'login' },
-							{ label: '注册', value: 'register' },
-						]"
-					/>
-					<el-form-item v-if="authMode === 'register'" prop="displayName"
-						><el-input
-							v-model="authForm.displayName"
-							placeholder="昵称"
-							maxlength="24"
-					/></el-form-item>
-					<el-form-item prop="username"
-						><el-input
-							v-model="authForm.username"
-							placeholder="用户名"
-							maxlength="24"
-					/></el-form-item>
-					<el-form-item prop="password"
-						><el-input
-							v-model="authForm.password"
-							type="password"
-							placeholder="密码"
-							maxlength="40"
-							show-password
-							@keyup.enter="submitAuth"
-					/></el-form-item>
-					<el-button
-						type="primary"
-						:icon="Check"
-						:loading="authSubmitting"
-						@click="submitAuth"
-						>{{ authMode === 'register' ? '注册' : '登录' }}</el-button
-					>
+				<el-form v-else ref="authFormRef" :model="authForm" :rules="authRules" class="auth-inline" inline
+					@submit.prevent>
+					<el-segmented v-model="authMode" :options="[
+						{ label: '登录', value: 'login' },
+						{ label: '注册', value: 'register' },
+					]" />
+					<el-form-item v-if="authMode === 'register'" prop="displayName"><el-input v-model="authForm.displayName"
+							placeholder="昵称" maxlength="24" /></el-form-item>
+					<el-form-item prop="username"><el-input v-model="authForm.username" placeholder="用户名"
+							maxlength="24" /></el-form-item>
+					<el-form-item prop="password"><el-input v-model="authForm.password" type="password" placeholder="密码"
+							maxlength="40" show-password @keyup.enter="submitAuth" /></el-form-item>
+					<el-button type="primary" :icon="Check" :loading="authSubmitting"
+						@click="submitAuth">{{ authMode === 'register' ? '注册' : '登录' }}</el-button>
 				</el-form>
 				<div class="room-metrics">
 					<div>
-						<b>{{ room?.questions.length ?? 0 }}</b
-						><span>提问</span>
+						<b>{{ room?.questions.length ?? 0 }}</b><span>提问</span>
 					</div>
 					<div>
-						<b>{{ pendingQuestions }}</b
-						><span>待判定</span>
+						<b>{{ pendingQuestions }}</b><span>待判定</span>
 					</div>
 					<div>
-						<b>{{ answeredQuestions }}</b
-						><span>已回答</span>
+						<b>{{ answeredQuestions }}</b><span>已回答</span>
 					</div>
 					<div>
-						<b>{{ memberStats.filter(member => member.online).length }}</b
-						><span>在线</span>
+						<b>{{memberStats.filter(member => member.online).length}}</b><span>在线</span>
 					</div>
 				</div>
 				<div class="member-strip">
-					<button
-						v-for="member in memberStats.slice(0, 8)"
-						:key="member.userId"
-						:class="['strip-member', { offline: !member.online }]"
-						type="button"
-						@click="openMemberImportant(member)"
-					>
+					<button v-for="member in memberStats.slice(0, 8)" :key="member.userId"
+						:class="['strip-member', { offline: !member.online }]" type="button" @click="openMemberImportant(member)">
 						<el-avatar :size="30" :src="member.avatarDataUrl">{{
 							member.displayName.slice(0, 1)
-						}}</el-avatar
-						><span>{{ member.displayName }}</span>
+						}}</el-avatar><span>{{ member.displayName }}</span>
 					</button>
 				</div>
 			</section>
@@ -2335,12 +3144,7 @@ function formatTime(time: string) {
 						<div class="section-head">
 							<div>
 								<p class="eyebrow">汤面</p>
-								<el-input
-									v-if="canHost && room"
-									v-model="room.title"
-									class="title-input"
-									@change="saveRoom"
-								/>
+								<el-input v-if="canHost && room" v-model="room.title" class="title-input" @change="saveRoom" />
 								<h2 v-else>
 									{{ room?.title ?? '请选择汤面并创建或加入房间' }}
 								</h2>
@@ -2349,410 +3153,14 @@ function formatTime(time: string) {
 								canHost ? '主持人' : '玩家'
 							}}</el-tag>
 						</div>
-						<RichTextEditor
-							v-if="canHost && room"
-							v-model="room.surface"
-							:min-rows="8"
-							placeholder="写下可公开给玩家的汤面"
-							@blur="saveRoom"
-						/>
-						<p
-							v-else
-							class="surface-text rich-display"
-							v-html="
-								sanitizeRichText(
-									room?.surface ??
-										'还没有进入房间。登录后可创建房间，或用房间号加入。',
-								)
-							"
-						/>
+						<RichTextEditor v-if="canHost && room" v-model="room.surface" :min-rows="8" placeholder="写下可公开给玩家的汤面"
+							@blur="saveRoom" />
+						<p v-else class="surface-text rich-display" v-html="sanitizeRichText(
+							room?.surface ??
+							'还没有进入房间。登录后可创建房间，或用房间号加入。',
+						)
+							" />
 					</section>
-					<section class="surface-card clue-card">
-						<div class="section-head compact">
-							<div class="title-with-icon">
-								<Flag /><strong>重要线索</strong>
-							</div>
-							<el-tag round effect="dark" type="warning">{{
-								importantQuestions.length
-							}}</el-tag>
-						</div>
-						<el-empty
-							v-if="!importantQuestions.length"
-							description="主持人还没有标记重要内容"
-						/>
-						<div v-else class="clue-list clue-card-grid">
-							<article
-								v-for="question in importantQuestions"
-								:key="question.id"
-								class="clue-item"
-							>
-								<div class="clue-card-top">
-									<el-avatar
-										:size="24"
-										:src="question.author.avatarDataUrl"
-										class="clue-avatar"
-										>{{ question.author.displayName.slice(0, 1) }}</el-avatar
-									>
-									<div class="clue-card-author">
-										<strong>{{ question.author.displayName }}</strong
-										><time>{{ formatTime(question.createdAt) }}</time>
-									</div>
-								</div>
-								<p class="clue-card-text">{{ question.text }}</p>
-								<div class="public-score-tags compact">
-									<el-tag
-										v-for="tag in questionSignalTags(question)"
-										:key="tag.key"
-										:type="tag.type"
-										:effect="tag.effect"
-										round
-										>{{ tag.label }}</el-tag
-									>
-								</div>
-								<el-tag
-									v-if="question.verdict"
-									class="clue-verdict-tag"
-									:class="question.verdict"
-									effect="plain"
-									round
-									>{{ verdictLabels[question.verdict] }}</el-tag
-								>
-							</article>
-						</div>
-					</section>
-				</aside>
-
-				<section class="surface-card qa-column">
-					<div class="section-head">
-						<div class="title-with-icon">
-							<EditPen /><strong>实时问答</strong>
-						</div>
-						<span class="subtle">{{ questionResultHint }}</span>
-					</div>
-					<div class="qa-filter-bar">
-						<div class="filter-scroll">
-							<button
-								v-for="option in questionFilterOptions"
-								:key="option.value"
-								:class="[
-									'filter-chip',
-									{ active: questionViewMode === option.value },
-								]"
-								type="button"
-								:disabled="option.disabled"
-								@click="
-									questionViewMode = option.value;
-									selectedQuestionId = ''
-								"
-							>
-								<span>{{ option.label }}</span><b>{{ option.count }}</b>
-							</button>
-						</div>
-						<el-input
-							v-model="questionSearchText"
-							class="qa-search"
-							clearable
-							:prefix-icon="Search"
-							placeholder="搜索问题、玩家、判定或线索标签"
-							@clear="selectedQuestionId = ''"
-							@input="selectedQuestionId = ''"
-						/>
-					</div>
-					<div class="qa-insight-board">
-						<section class="confirmed">
-							<header class="insight-card-head">
-								<div>
-									<strong>已确认</strong><small>主持人回答“是”</small>
-								</div>
-								<span>{{ confirmedQuestions.length }}</span>
-							</header>
-							<p v-if="!confirmedQuestions.length">暂无“是”的结论</p>
-							<button
-								v-for="question in confirmedPreviewQuestions"
-								:key="question.id"
-								class="insight-question"
-								type="button"
-								@click="revealQuestion(question.id)"
-							>
-								<span>{{ question.text }}</span><time>{{ formatTime(question.createdAt) }}</time>
-							</button>
-							<button
-								v-if="confirmedQuestions.length > confirmedPreviewQuestions.length"
-								class="insight-more"
-								type="button"
-								@click="openInsightDrawer('confirmed')"
-							>
-								查看更多 {{ confirmedQuestions.length }} 条
-							</button>
-						</section>
-						<section class="ruled-out">
-							<header class="insight-card-head">
-								<div>
-									<strong>已排除</strong><small>主持人回答“不是”</small>
-								</div>
-								<span>{{ ruledOutQuestions.length }}</span>
-							</header>
-							<p v-if="!ruledOutQuestions.length">暂无“不是”的结论</p>
-							<button
-								v-for="question in ruledOutPreviewQuestions"
-								:key="question.id"
-								class="insight-question"
-								type="button"
-								@click="revealQuestion(question.id)"
-							>
-								<span>{{ question.text }}</span><time>{{ formatTime(question.createdAt) }}</time>
-							</button>
-							<button
-								v-if="ruledOutQuestions.length > ruledOutPreviewQuestions.length"
-								class="insight-more"
-								type="button"
-								@click="openInsightDrawer('ruledOut')"
-							>
-								查看更多 {{ ruledOutQuestions.length }} 条
-							</button>
-						</section>
-					</div>
-					<div class="ask-row">
-						<el-input
-							ref="questionInputRef"
-							v-model="questionText"
-							size="large"
-							placeholder="输入问题，例如：这个人认识厨师吗？"
-							:disabled="!user || !room"
-							@keyup.enter="addQuestion"
-						/><el-button
-							type="primary"
-							size="large"
-							:icon="Right"
-							:loading="sendingQuestion"
-							:disabled="!user || !room"
-							@click="addQuestion"
-							>发送</el-button
-						>
-					</div>
-					<div class="timeline">
-						<el-empty
-							v-if="!visibleQuestions.length"
-							:description="
-								sortedQuestions.length
-									? '没有匹配的问答，换个筛选或关键词试试。'
-									: '还没有问题，开汤吧。'
-							"
-						/>
-						<article
-							v-for="question in visibleQuestions"
-							:key="question.id"
-							:data-question-id="question.id"
-							:class="[
-								'question-item',
-								{ selected: selectedQuestionId === question.id },
-							]"
-							@click="
-								selectedQuestionId =
-									selectedQuestionId === question.id ? '' : question.id
-							"
-						>
-							<div class="question-main">
-								<div class="question-meta">
-									<el-avatar :size="24" :src="question.author.avatarDataUrl">{{
-										question.author.displayName.slice(0, 1)
-									}}</el-avatar>
-									<span>{{ question.author.displayName }}</span
-									><el-tag
-										v-if="question.author.id === room?.host.id"
-										class="host-author-tag"
-										style="background: #ff7f50; border: none"
-										effect="dark"
-										round
-									>
-										<span style="color: white">主持人</span></el-tag
-									>
-									<time>{{ formatTime(question.createdAt) }}</time>
-								</div>
-								<p v-html="highlightQuestionText(question.text)" />
-								<div
-									v-if="
-										question.quality !== 'none' ||
-										question.truthGuess !== 'none' ||
-										question.firstCoreClue ||
-										question.firstMainLogic ||
-										question.firstFullSolve
-									"
-									class="public-score-tags"
-								>
-									<el-tag
-										v-if="question.quality !== 'none'"
-										type="success"
-										effect="plain"
-										round
-										>{{ qualityLabels[question.quality] }}</el-tag
-									><el-tag
-										v-if="question.truthGuess !== 'none'"
-										type="warning"
-										effect="plain"
-										round
-										>{{ truthGuessLabels[question.truthGuess] }}</el-tag
-									><el-tag
-										v-if="question.firstCoreClue"
-										type="success"
-										effect="dark"
-										round
-										>首次核心线索</el-tag
-									><el-tag
-										v-if="question.firstMainLogic"
-										type="warning"
-										effect="dark"
-										round
-										>首次主要逻辑</el-tag
-									><el-tag
-										v-if="question.firstFullSolve"
-										type="danger"
-										effect="dark"
-										round
-										>首位完整破解</el-tag
-									>
-								</div>
-							</div>
-							<div class="verdict-zone">
-								<div class="tag-line">
-									<el-tag
-										v-if="question.important"
-										type="warning"
-										effect="dark"
-										round
-										>重要</el-tag
-									><el-tag
-										v-if="question.verdict"
-										:type="verdictTypes[question.verdict]"
-										effect="dark"
-										round
-										>{{ verdictLabels[question.verdict] }}</el-tag
-									><span v-if="!question.verdict" class="waiting"
-										>等待主持人</span
-									>
-								</div>
-								<el-button v-if="canHost" size="small" text>{{
-									selectedQuestionId === question.id ? '收起操作' : '主持操作'
-								}}</el-button>
-							</div>
-							<div
-								v-if="canHost && selectedQuestionId === question.id"
-								class="host-action-panel"
-								@click.stop
-							>
-								<div class="host-action-heading">
-									<strong>主持人操作</strong>
-									<small>判定回答、标记线索，并记录本轮积分依据</small>
-								</div>
-								<div class="action-group">
-									<span class="action-title">判定</span
-									><button
-										class="judge yes"
-										type="button"
-										@click="setVerdict(question.id, 'yes')"
-									>
-										是</button
-									><button
-										class="judge no"
-										type="button"
-										@click="setVerdict(question.id, 'no')"
-									>
-										不是</button
-									><button
-										class="judge both"
-										type="button"
-										@click="setVerdict(question.id, 'both')"
-									>
-										是也不是</button
-									><button
-										class="judge mute"
-										type="button"
-										@click="setVerdict(question.id, 'irrelevant')"
-									>
-										不重要
-									</button>
-								</div>
-								<div class="action-group">
-									<span class="action-title">标记</span
-									><button
-										:class="['judge', 'flag', { active: question.important }]"
-										type="button"
-										@click="toggleImportant(question)"
-									>
-										{{ question.important ? '已标重要' : '标为重要' }}</button
-									><button
-										class="judge delete"
-										type="button"
-										@click="removeQuestion(question.id)"
-									>
-										删除
-									</button>
-								</div>
-								<div class="score-grid">
-									<label
-										>问题价值<el-select
-											:model-value="question.quality"
-											size="small"
-											@change="
-												(value: QuestionQuality) =>
-													updateQuestionScoring(question, { quality: value })
-											"
-											><el-option
-												v-for="(label, value) in qualityLabels"
-												:key="value"
-												:label="label"
-												:value="value" /></el-select></label
-									><label
-										>猜中程度<el-select
-											:model-value="question.truthGuess"
-											size="small"
-											@change="
-												(value: TruthGuess) =>
-													updateQuestionScoring(question, { truthGuess: value })
-											"
-											><el-option
-												v-for="(label, value) in truthGuessLabels"
-												:key="value"
-												:label="label"
-												:value="value" /></el-select
-									></label>
-								</div>
-								<div class="achievement-row">
-									<el-checkbox
-										:model-value="question.firstCoreClue"
-										@change="
-											(value: boolean) =>
-												updateQuestionScoring(question, {
-													firstCoreClue: value,
-												})
-										"
-										>首次核心线索</el-checkbox
-									><el-checkbox
-										:model-value="question.firstMainLogic"
-										@change="
-											(value: boolean) =>
-												updateQuestionScoring(question, {
-													firstMainLogic: value,
-												})
-										"
-										>首次主要逻辑</el-checkbox
-									><el-checkbox
-										:model-value="question.firstFullSolve"
-										@change="
-											(value: boolean) =>
-												updateQuestionScoring(question, {
-													firstFullSolve: value,
-												})
-										"
-										>首位完整破解</el-checkbox
-									>
-								</div>
-							</div>
-						</article>
-					</div>
-				</section>
-
-				<aside class="control-column">
 					<section class="surface-card config-card">
 						<div class="section-head compact">
 							<div class="title-with-icon">
@@ -2760,28 +3168,11 @@ function formatTime(time: string) {
 							</div>
 						</div>
 						<div class="config-stack">
-							<label>选择汤面</label
-							><el-select
-								v-model="selectedSoupId"
-								filterable
-								placeholder="选择自己的汤面"
-								:disabled="!user || !soups.length"
-								><el-option
-									v-for="soup in soups"
-									:key="soup.id"
-									:label="soup.title"
-									:value="soup.id"
-									><span>{{ soup.title }}</span
-									><small
-										>我的汤面 · {{ difficultyLabels[soup.difficulty] }}</small
-									></el-option
-								></el-select
-							>
-							<el-empty
-								v-if="user && !soups.length"
-								description="还没有自己的汤面"
-								:image-size="54"
-							/>
+							<label>选择汤面</label><el-select v-model="selectedSoupId" filterable placeholder="选择自己的汤面"
+								:disabled="!user || !soups.length"><el-option v-for="soup in soups" :key="soup.id" :label="soup.title"
+									:value="soup.id"><span>{{ soup.title }}</span><small>我的汤面 ·
+										{{ difficultyLabels[soup.difficulty] }}</small></el-option></el-select>
+							<el-empty v-if="user && !soups.length" description="还没有自己的汤面" :image-size="54" />
 							<!-- <div v-if="selectedSoupSummary" class="soup-current">
 								<div>
 									<strong>{{ selectedSoupSummary.title }}</strong
@@ -2795,71 +3186,226 @@ function formatTime(time: string) {
 									>管理汤面</el-button
 								>
 							</div> -->
-							<p
-								v-if="room && canHost && isSelectedCurrentSoup"
-								class="switch-warning"
-							>
+							<p v-if="room && canHost && isSelectedCurrentSoup" class="switch-warning">
 								请先选择新的汤面
 							</p>
 							<p v-else-if="room && canHost" class="switch-warning">
 								切换后会清空当前房间的问答、重要线索、画板和结算记录。
 							</p>
 							<div class="config-actions">
-								<el-button
-									:icon="Plus"
-									:disabled="!user"
-									@click="openCreateSoupDialog"
-									>自建汤面</el-button
-								><el-dropdown
-									trigger="click"
-									:disabled="!user"
-									@command="handleRoomActionCommand"
-								>
-									<el-button type="primary" :icon="Plus" :disabled="!user"
-										>创建房间</el-button
-									>
+								<el-button :icon="Plus" :disabled="!user" @click="openCreateSoupDialog">自建汤面</el-button><el-dropdown
+									trigger="click" :disabled="!user" @command="handleRoomActionCommand">
+									<el-button type="primary" :icon="Plus" :disabled="!user">创建房间</el-button>
 									<template #dropdown>
 										<el-dropdown-menu>
-											<el-dropdown-item
-												command="create"
-												:disabled="!selectedSoupId"
-											>
+											<el-dropdown-item command="create" :disabled="!selectedSoupId">
 												创建新房间
 											</el-dropdown-item>
-											<el-dropdown-item
-												command="switch"
-												:disabled="
-													!room ||
-													!canHost ||
-													!selectedSoupId ||
-													isSelectedCurrentSoup
-												"
-											>
+											<el-dropdown-item command="switch" :disabled="!room ||
+												!canHost ||
+												!selectedSoupId ||
+												isSelectedCurrentSoup
+												">
 												切换当前题目
 											</el-dropdown-item>
 										</el-dropdown-menu>
 									</template>
-								</el-dropdown
-								>
-								<el-button type="info" @click="soupManagerOpen = true"
-									>管理汤面</el-button
-								>
+								</el-dropdown>
+								<el-button type="info" @click="soupManagerOpen = true">管理汤面</el-button>
 							</div>
 							<label>加入房间</label>
 							<div class="room-row">
-								<el-input
-									v-model="roomCodeInput"
-									placeholder="输入房间号"
-									@keyup.enter="joinRoom()"
-								/><el-button :icon="Right" @click="joinRoom()" />
+								<el-input v-model="roomCodeInput" placeholder="输入房间号" @keyup.enter="joinRoom()" /><el-button
+									:icon="Right" @click="joinRoom()" />
 							</div>
-							<el-button
-								text
-								:icon="CopyDocument"
-								:disabled="!room"
-								@click="copyShareUrl"
-								>复制邀请链接</el-button
-							>
+							<el-button text :icon="CopyDocument" :disabled="!room" @click="copyShareUrl">复制邀请链接</el-button>
+						</div>
+					</section>
+				</aside>
+
+				<section class="surface-card qa-column">
+					<div class="section-head">
+						<div class="title-with-icon">
+							<EditPen /><strong>实时问答</strong>
+						</div>
+						<div class="qa-head-actions">
+							<span class="subtle">{{ questionResultHint }}</span>
+							<el-button :icon="Flag" size="small" plain :disabled="!room" @click="openThoughtBoard">思路板</el-button>
+						</div>
+					</div>
+					<div class="qa-filter-bar">
+						<div class="filter-scroll">
+							<button v-for="option in questionFilterOptions" :key="option.value" :class="[
+								'filter-chip',
+								{ active: questionViewMode === option.value },
+							]" type="button" :disabled="option.disabled" @click="
+								questionViewMode = option.value;
+							selectedQuestionId = ''
+								">
+								<span>{{ option.label }}</span><b>{{ option.count }}</b>
+							</button>
+						</div>
+						<el-input v-model="questionSearchText" class="qa-search" clearable :prefix-icon="Search"
+							placeholder="搜索问题、玩家、判定或线索标签" @clear="selectedQuestionId = ''" @input="selectedQuestionId = ''" />
+					</div>
+					<div class="qa-insight-board">
+						<section class="confirmed">
+							<button class="insight-card-head" type="button" @click="openInsightDrawer('confirmed')">
+								<div>
+									<strong>已确认</strong><small>主持人回答“是”</small>
+								</div>
+								<span>{{ confirmedQuestions.length }}</span>
+							</button>
+						</section>
+						<section class="ruled-out">
+							<button class="insight-card-head" type="button" @click="openInsightDrawer('ruledOut')">
+								<div>
+									<strong>已排除</strong><small>主持人回答“不是”</small>
+								</div>
+								<span>{{ ruledOutQuestions.length }}</span>
+							</button>
+						</section>
+					</div>
+					<div class="ask-row desktop-ask-row">
+						<el-input ref="questionInputRef" v-model="questionText" size="large" placeholder="输入问题，例如：这个人认识厨师吗？"
+							:disabled="!user || !room" @keyup.enter="addQuestion" /><el-button type="primary" size="large"
+							:icon="Right" :loading="sendingQuestion" :disabled="!user || !room" @click="addQuestion">发送</el-button>
+					</div>
+					<div class="timeline">
+						<el-empty v-if="!visibleQuestions.length" :description="sortedQuestions.length
+							? '没有匹配的问答，换个筛选或关键词试试。'
+							: '还没有问题，开汤吧。'
+							" />
+						<article v-for="question in visibleQuestions" :key="question.id" :data-question-id="question.id" :class="[
+							'question-item',
+							{ selected: selectedQuestionId === question.id },
+						]" @click="
+							selectedQuestionId =
+							selectedQuestionId === question.id ? '' : question.id
+							">
+							<div class="question-main">
+								<div class="question-meta">
+									<el-avatar :size="24" :src="question.author.avatarDataUrl">{{
+										question.author.displayName.slice(0, 1)
+									}}</el-avatar>
+									<span>{{ question.author.displayName }}</span><el-tag v-if="question.author.id === room?.host.id"
+										class="host-author-tag" style="background: #ff7f50; border: none" effect="dark" round>
+										<span style="color: white">主持人</span></el-tag>
+									<time>{{ formatTime(question.createdAt) }}</time>
+								</div>
+								<p v-html="highlightQuestionText(question.text)" />
+								<div v-if="
+									question.quality !== 'none' ||
+									question.truthGuess !== 'none' ||
+									question.firstCoreClue ||
+									question.firstMainLogic ||
+									question.firstFullSolve
+								" class="public-score-tags">
+									<el-tag v-if="question.quality !== 'none'" type="success" effect="plain"
+										round>{{ qualityLabels[question.quality] }}</el-tag><el-tag v-if="question.truthGuess !== 'none'"
+										type="warning" effect="plain" round>{{ truthGuessLabels[question.truthGuess] }}</el-tag><el-tag
+										v-if="question.firstCoreClue" type="success" effect="dark" round>首次核心线索</el-tag><el-tag
+										v-if="question.firstMainLogic" type="warning" effect="dark" round>首次主要逻辑</el-tag><el-tag
+										v-if="question.firstFullSolve" type="danger" effect="dark" round>首位完整破解</el-tag>
+								</div>
+							</div>
+							<div class="verdict-zone">
+								<div class="tag-line">
+									<el-tag v-if="question.important" type="warning" effect="dark" round>重要</el-tag><el-tag
+										v-if="question.verdict" :type="verdictTypes[question.verdict]" effect="dark"
+										round>{{ verdictLabels[question.verdict] }}</el-tag><span v-if="!question.verdict"
+										class="waiting">等待主持人</span>
+								</div>
+								<el-button v-if="canHost" size="small" text>{{
+									selectedQuestionId === question.id ? '收起操作' : '主持操作'
+								}}</el-button>
+							</div>
+							<div v-if="canHost && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
+								<div class="host-action-heading">
+									<strong>主持人操作</strong>
+									<small>判定回答、标记线索，并记录本轮积分依据</small>
+								</div>
+								<div class="action-group">
+									<span class="action-title">判定</span><button class="judge yes" type="button"
+										@click="setVerdict(question.id, 'yes')">
+										是</button><button class="judge no" type="button" @click="setVerdict(question.id, 'no')">
+										不是</button><button class="judge both" type="button" @click="setVerdict(question.id, 'both')">
+										是也不是</button><button class="judge mute" type="button"
+										@click="setVerdict(question.id, 'irrelevant')">
+										不重要
+									</button>
+								</div>
+								<div class="action-group">
+									<span class="action-title">标记</span><button :class="['judge', 'flag', { active: question.important }]"
+										type="button" @click="toggleImportant(question)">
+										{{ question.important ? '已标重要' : '标为重要' }}</button><button class="judge delete" type="button"
+										@click="removeQuestion(question.id)">
+										删除
+									</button>
+								</div>
+								<div class="score-grid">
+									<label>问题价值<el-select :model-value="question.quality" size="small" @change="
+										(value: QuestionQuality) =>
+											updateQuestionScoring(question, { quality: value })
+									"><el-option v-for="(label, value) in qualityLabels" :key="value" :label="label"
+												:value="value" /></el-select></label><label>猜中程度<el-select :model-value="question.truthGuess"
+											size="small" @change="
+												(value: TruthGuess) =>
+													updateQuestionScoring(question, { truthGuess: value })
+											"><el-option v-for="(label, value) in truthGuessLabels" :key="value" :label="label"
+												:value="value" /></el-select></label>
+								</div>
+								<div class="achievement-row">
+									<el-checkbox :model-value="question.firstCoreClue" @change="
+										(value: boolean) =>
+											updateQuestionScoring(question, {
+												firstCoreClue: value,
+											})
+									">首次核心线索</el-checkbox><el-checkbox :model-value="question.firstMainLogic" @change="
+										(value: boolean) =>
+											updateQuestionScoring(question, {
+												firstMainLogic: value,
+											})
+									">首次主要逻辑</el-checkbox><el-checkbox :model-value="question.firstFullSolve" @change="
+										(value: boolean) =>
+											updateQuestionScoring(question, {
+												firstFullSolve: value,
+											})
+									">首位完整破解</el-checkbox>
+								</div>
+							</div>
+						</article>
+					</div>
+				</section>
+
+				<aside class="control-column">
+					<section class="surface-card clue-card">
+						<div class="section-head compact">
+							<div class="title-with-icon">
+								<Flag /><strong>重要线索</strong>
+							</div>
+							<el-tag round effect="dark" type="warning">{{
+								importantQuestions.length
+							}}</el-tag>
+						</div>
+						<el-empty v-if="!importantQuestions.length" description="主持人还没有标记重要内容" />
+						<div v-else class="clue-list clue-card-grid">
+							<article v-for="question in importantQuestions" :key="question.id" class="clue-item">
+								<div class="clue-card-top">
+									<el-avatar :size="24" :src="question.author.avatarDataUrl"
+										class="clue-avatar">{{ question.author.displayName.slice(0, 1) }}</el-avatar>
+									<div class="clue-card-author">
+										<strong>{{ question.author.displayName }}</strong><time>{{ formatTime(question.createdAt) }}</time>
+									</div>
+								</div>
+								<p class="clue-card-text">{{ question.text }}</p>
+								<div class="public-score-tags compact">
+									<el-tag v-for="tag in questionSignalTags(question)" :key="tag.key" :type="tag.type"
+										:effect="tag.effect" round>{{ tag.label }}</el-tag>
+								</div>
+								<el-tag v-if="question.verdict" class="clue-verdict-tag" :class="question.verdict" effect="plain"
+									round>{{ verdictLabels[question.verdict] }}</el-tag>
+							</article>
 						</div>
 					</section>
 					<section class="surface-card members-card">
@@ -2868,52 +3414,26 @@ function formatTime(time: string) {
 								<User /><strong>房间用户({{ memberStats.length || 0 }})</strong>
 							</div>
 						</div>
-						<el-empty
-							v-if="!memberStats.length"
-							description="暂无用户"
-							:image-size="58"
-						/>
+						<el-empty v-if="!memberStats.length" description="暂无用户" :image-size="58" />
 						<div v-else class="member-list">
-							<div
-								v-for="member in memberStats"
-								:key="member.userId"
-								:class="['member-row', { offline: !member.online }]"
-								role="button"
-								tabindex="0"
-								@click="openMemberImportant(member)"
-								@keyup.enter="openMemberImportant(member)"
-							>
+							<div v-for="member in memberStats" :key="member.userId"
+								:class="['member-row', { offline: !member.online }]" role="button" tabindex="0"
+								@click="openMemberImportant(member)" @keyup.enter="openMemberImportant(member)">
 								<el-avatar :size="34" :src="member.avatarDataUrl">{{
 									member.displayName.slice(0, 1)
-								}}</el-avatar
-								><span class="member-name"
-									>{{ member.displayName
-									}}<span class="member-badges"
-										><em v-if="room?.host.id === member.userId">主持人</em
-										><i :class="member.online ? 'online' : 'offline'">{{
-											member.online ? '在线' : '离线'
-										}}</i></span
-									></span
-								><span class="member-counts"
-									><b>{{ member.questionCount }}</b
-									>问 <b class="important-number">{{ member.importantCount }}</b
-									>重要</span
-								><el-button
-									v-if="canTransferHostTo(member)"
-									size="small"
-									type="primary"
-									plain
-									@click.stop="transferHost(member)"
-									>设为主持人</el-button
-								>
+								}}</el-avatar><span class="member-name">{{ member.displayName
+								}}<span class="member-badges"><em v-if="room?.host.id === member.userId">主持人</em><i
+											:class="member.online ? 'online' : 'offline'">{{
+												member.online ? '在线' : '离线'
+											}}</i></span></span><span class="member-counts"><b>{{ member.questionCount }}</b>问 <b
+										class="important-number">{{ member.importantCount }}</b>重要</span><el-button
+									v-if="canTransferHostTo(member)" size="small" type="primary" plain
+									@click.stop="transferHost(member)">设为主持人</el-button>
 							</div>
 						</div>
 						<div v-if="presenceEvents.length" class="presence-feed">
-							<div
-								v-for="event in presenceEvents"
-								:key="event.at + '-' + event.user.userId"
-								:class="['presence-line', event.type]"
-							>
+							<div v-for="event in presenceEvents" :key="event.at + '-' + event.user.userId"
+								:class="['presence-line', event.type]">
 								<span />
 								<p>{{ event.message }}</p>
 							</div>
@@ -2925,30 +3445,16 @@ function formatTime(time: string) {
 								<Flag /><strong>实时积分排行</strong>
 							</div>
 						</div>
-						<el-empty
-							v-if="!liveLeaderboard.length"
-							description="暂无排行"
-							:image-size="56"
-						/>
+						<el-empty v-if="!liveLeaderboard.length" description="暂无排行" :image-size="56" />
 						<div v-else class="mini-rank-list">
-							<div
-								v-for="entry in liveLeaderboard.slice(0, 6)"
-								:key="entry.user.id"
-								class="mini-rank-row"
-							>
-								<strong>#{{ entry.rank }}</strong
-								><el-avatar :size="30" :src="entry.user.avatarDataUrl">{{
+							<div v-for="entry in liveLeaderboard.slice(0, 6)" :key="entry.user.id" class="mini-rank-row">
+								<strong>#{{ entry.rank }}</strong><el-avatar :size="30" :src="entry.user.avatarDataUrl">{{
 									entry.user.displayName.slice(0, 1)
-								}}</el-avatar
-								><span>{{ entry.user.displayName }}</span
-								><b>{{ entry.total }}</b>
+								}}</el-avatar><span>{{ entry.user.displayName }}</span><b>{{ entry.total }}</b>
 							</div>
 						</div>
 					</section>
-					<section
-						v-if="soupHistory.length"
-						class="surface-card soup-history-card"
-					>
+					<section v-if="soupHistory.length" class="surface-card soup-history-card">
 						<div class="section-head compact">
 							<div class="title-with-icon">
 								<Flag /><strong>本房间汤面记录</strong>
@@ -2956,64 +3462,38 @@ function formatTime(time: string) {
 							<el-tag round>{{ soupHistory.length }}</el-tag>
 						</div>
 						<div class="soup-history-list">
-							<article
-								v-for="item in soupHistory"
-								:key="item.id"
-								class="soup-history-item"
-								role="button"
-								tabindex="0"
-								@click="openSoupHistoryDetail(item)"
-								@keyup.enter="openSoupHistoryDetail(item)"
-							>
+							<article v-for="item in soupHistory" :key="item.id" class="soup-history-item" role="button" tabindex="0"
+								@click="openSoupHistoryDetail(item)" @keyup.enter="openSoupHistoryDetail(item)">
 								<div class="soup-history-head">
 									<strong>{{ item.title }}</strong>
 									<div class="soup-history-host">
-										<span style="display: flex; align-items: center"
-											>主持人：
-											<el-avatar
-												:size="22"
-												style="margin-right: 3px"
-												:src="
-													item.host?.avatarDataUrl || room?.host.avatarDataUrl
-												"
-												>{{
+										<span style="display: flex; align-items: center">主持人：
+											<el-avatar :size="22" style="margin-right: 3px" :src="item.host?.avatarDataUrl || room?.host.avatarDataUrl
+												">{{
 													(
 														item.host?.displayName ??
 														room?.host.displayName ??
 														'?'
 													).slice(0, 1)
-												}}</el-avatar
-											>{{
-												item.host?.displayName ??
-												room?.host.displayName ??
-												'未知'
-											}}</span
-										>
+												}}</el-avatar>{{
+													item.host?.displayName ??
+													room?.host.displayName ??
+													'未知'
+												}}</span>
 
 										<time>{{ formatTime(item.startedAt) }}</time>
 									</div>
 								</div>
-								<p
-									class="rich-display"
-									v-html="sanitizeRichText(item.surface)"
-								/>
+								<p class="rich-display" v-html="sanitizeRichText(item.surface)" />
 								<div v-if="getHistoryMvpUser(item)" class="soup-history-mvp">
 									<span>MVP</span>
-									<el-avatar
-										:size="22"
-										:src="getHistoryMvpUser(item)?.avatarDataUrl"
-										>{{
-											getHistoryMvpUser(item)?.displayName.slice(0, 1)
-										}}</el-avatar
-									>
+									<el-avatar :size="22" :src="getHistoryMvpUser(item)?.avatarDataUrl">{{
+										getHistoryMvpUser(item)?.displayName.slice(0, 1)
+									}}</el-avatar>
 									<strong>{{ getHistoryMvpUser(item)?.displayName }}</strong>
 								</div>
 								<div class="soup-history-rating">
-									<el-rate
-										:model-value="item.ratingAverage || 0"
-										disabled
-										allow-half
-									/>
+									<el-rate :model-value="item.ratingAverage || 0" disabled allow-half />
 									<small>{{
 										item.ratingCount
 											? `${item.ratingAverage} 分 / ${item.ratingCount} 人`
@@ -3030,50 +3510,34 @@ function formatTime(time: string) {
 
 			<div class="floating-tools">
 				<el-tooltip v-if="canHost" content="主持人控制台" placement="left">
-					<button
-						:class="[
-							'float-tool',
-							{ active: toolDockOpen && activePanel === 'host' },
-						]"
-						type="button"
-						@click="openToolDock('host')"
-					>
+					<button :class="[
+						'float-tool',
+						{ active: toolDockOpen && activePanel === 'host' },
+					]" type="button" @click="openToolDock('host')">
 						<Setting />
 					</button>
 				</el-tooltip>
 				<el-tooltip v-if="canHost" content="汤底" placement="left">
-					<button
-						:class="[
-							'float-tool',
-							{ active: toolDockOpen && activePanel === 'answer' },
-						]"
-						type="button"
-						@click="openToolDock('answer')"
-					>
+					<button :class="[
+						'float-tool',
+						{ active: toolDockOpen && activePanel === 'answer' },
+					]" type="button" @click="openToolDock('answer')">
 						<Hide />
 					</button>
 				</el-tooltip>
 				<el-tooltip v-if="room && !canHost" content="玩家设置" placement="left">
-					<button
-						:class="[
-							'float-tool',
-							{ active: toolDockOpen && activePanel === 'player' },
-						]"
-						type="button"
-						@click="openToolDock('player')"
-					>
+					<button :class="[
+						'float-tool',
+						{ active: toolDockOpen && activePanel === 'player' },
+					]" type="button" @click="openToolDock('player')">
 						<Setting />
 					</button>
 				</el-tooltip>
 				<el-tooltip content="画板" placement="left">
-					<button
-						:class="[
-							'float-tool',
-							{ active: toolDockOpen && activePanel === 'canvas' },
-						]"
-						type="button"
-						@click="openToolDock('canvas')"
-					>
+					<button :class="[
+						'float-tool',
+						{ active: toolDockOpen && activePanel === 'canvas' },
+					]" type="button" @click="openToolDock('canvas')">
 						<Brush />
 					</button>
 				</el-tooltip>
@@ -3082,166 +3546,85 @@ function formatTime(time: string) {
 			<section v-if="toolDockOpen" class="tool-popover surface-card">
 				<div class="tool-popover-head">
 					<div class="tool-tabs">
-						<button
-							v-if="canHost"
-							:class="{ active: activePanel === 'host' }"
-							type="button"
-							@click="openToolDock('host')"
-						>
+						<button v-if="canHost" :class="{ active: activePanel === 'host' }" type="button"
+							@click="openToolDock('host')">
 							<Setting /> 控制台
 						</button>
-						<button
-							v-if="canHost"
-							:class="{ active: activePanel === 'answer' }"
-							type="button"
-							@click="openToolDock('answer')"
-						>
+						<button v-if="canHost" :class="{ active: activePanel === 'answer' }" type="button"
+							@click="openToolDock('answer')">
 							<Hide /> 汤底
 						</button>
-						<button
-							v-if="room && !canHost"
-							:class="{ active: activePanel === 'player' }"
-							type="button"
-							@click="openToolDock('player')"
-						>
+						<button v-if="room && !canHost" :class="{ active: activePanel === 'player' }" type="button"
+							@click="openToolDock('player')">
 							<Setting /> 设置
 						</button>
-						<button
-							:class="{ active: activePanel === 'canvas' }"
-							type="button"
-							@click="openToolDock('canvas')"
-						>
+						<button :class="{ active: activePanel === 'canvas' }" type="button" @click="openToolDock('canvas')">
 							<Brush /> 画板
 						</button>
 					</div>
 					<el-button text @click="toolDockOpen = false">收起</el-button>
 				</div>
 
-				<div
-					v-if="canHost"
-					v-show="activePanel === 'host'"
-					class="tool-panel host-console-panel"
-				>
-					<div
-						:class="['ambience-preview', { custom: activeBackgroundImage }]"
-						:style="ambiencePreviewStyle"
-					>
-						<span
-							>{{ activeBackgroundLabel }} ·
-							{{ activeAmbiencePreset.tone }}</span
-						>
+				<div v-if="canHost" v-show="activePanel === 'host'" class="tool-panel host-console-panel">
+					<div :class="['ambience-preview', { custom: activeBackgroundImage }]" :style="ambiencePreviewStyle">
+						<span>{{ activeBackgroundLabel }} ·
+							{{ activeAmbiencePreset.tone }}</span>
 						<strong>{{
 							roomMusicDataUrl ? roomMusicName : '未设置房间音乐'
 						}}</strong>
 					</div>
 					<div class="ambience-presets">
-						<button
-							v-for="preset in AMBIENCE_PRESETS"
-							:key="preset.id"
-							:class="[
-								'preset-chip',
-								{
-									active:
-										!activeBackgroundImage &&
-										ambienceDraft.backgroundPreset === preset.id,
-								},
-							]"
-							type="button"
-							@click="chooseAmbiencePreset(preset.id)"
-						>
+						<button v-for="preset in AMBIENCE_PRESETS" :key="preset.id" :class="[
+							'preset-chip',
+							{
+								active:
+									!activeBackgroundImage &&
+									ambienceDraft.backgroundPreset === preset.id,
+							},
+						]" type="button" @click="chooseAmbiencePreset(preset.id)">
 							<span :style="{ background: preset.background }" />
 							<strong>{{ preset.label }}</strong>
 							<small>{{ preset.tone }}</small>
 						</button>
 					</div>
 					<div class="host-console-grid">
-						<el-upload
-							:show-file-list="false"
-							:before-upload="beforeBackgroundUpload"
-							accept="image/*"
-						>
+						<el-upload :show-file-list="false" :before-upload="beforeBackgroundUpload" accept="image/*">
 							<el-button plain :icon="Picture">更换背景</el-button>
 						</el-upload>
-						<el-upload
-							:show-file-list="false"
-							:before-upload="beforeMusicUpload"
-							accept="audio/*"
-						>
+						<el-upload :show-file-list="false" :before-upload="beforeMusicUpload" accept="audio/*">
 							<el-button plain :icon="Headset">上传房间音乐</el-button>
 						</el-upload>
-						<el-button
-							:icon="musicPlaying ? VideoPause : VideoPlay"
-							:disabled="!roomMusicDataUrl"
-							@click="toggleMusicPlayback"
-							plain
-							>{{ musicPlaying ? '暂停音乐' : '播放音乐' }}</el-button
-						>
+						<el-button :icon="musicPlaying ? VideoPause : VideoPlay" :disabled="!roomMusicDataUrl"
+							@click="toggleMusicPlayback" plain>{{ musicPlaying ? '暂停音乐' : '播放音乐' }}</el-button>
 						<div>
-							<el-button :icon="Refresh" plain @click="resetAmbience"
-								>重置氛围</el-button
-							>
+							<el-button :icon="Refresh" plain @click="resetAmbience">重置氛围</el-button>
 						</div>
 					</div>
 					<div class="host-console-local">
 						<div class="background-choice">
 							<span>使用房间背景</span>
-							<el-switch
-								v-model="useHostBackground"
-								inline-prompt
-								active-text="使用"
-								inactive-text="默认"
-							/>
+							<el-switch v-model="useHostBackground" inline-prompt active-text="使用" inactive-text="默认" />
 						</div>
 						<div class="background-choice">
 							<span>播放房间音乐</span>
-							<el-switch
-								v-model="useRoomMusic"
-								:disabled="!roomMusicDataUrl"
-								inline-prompt
-								active-text="开启"
-								inactive-text="关闭"
-							/>
+							<el-switch v-model="useRoomMusic" :disabled="!roomMusicDataUrl" inline-prompt active-text="开启"
+								inactive-text="关闭" />
 						</div>
 					</div>
 					<div class="volume-control">
 						<span>音乐音量</span>
-						<el-slider
-							v-model="ambienceVolume"
-							:min="0"
-							:max="100"
-							:disabled="!roomMusicDataUrl"
-						/>
+						<el-slider v-model="ambienceVolume" :min="0" :max="100" :disabled="!roomMusicDataUrl" />
 					</div>
 					<div v-if="hasCustomAmbience" class="ambience-mini-actions">
-						<el-button
-							text
-							:disabled="!activeBackgroundImage"
-							@click="clearBackgroundImage"
-							>移除背景</el-button
-						>
-						<el-button
-							text
-							type="danger"
-							:disabled="!roomMusicDataUrl"
-							@click="clearMusic"
-							>移除房间音乐</el-button
-						>
+						<el-button text :disabled="!activeBackgroundImage" @click="clearBackgroundImage">移除背景</el-button>
+						<el-button text type="danger" :disabled="!roomMusicDataUrl" @click="clearMusic">移除房间音乐</el-button>
 					</div>
 				</div>
 
-				<div
-					v-if="room && !canHost"
-					v-show="activePanel === 'player'"
-					class="tool-panel host-console-panel"
-				>
-					<div
-						:class="['ambience-preview', { custom: activeBackgroundImage }]"
-						:style="ambiencePreviewStyle"
-					>
-						<span
-							>{{ activeBackgroundLabel }} ·
-							{{ activeAmbiencePreset.tone }}</span
-						>
+				<div v-if="room && !canHost" v-show="activePanel === 'player'" class="tool-panel host-console-panel">
+					<div :class="['ambience-preview', { custom: activeBackgroundImage }]" :style="ambiencePreviewStyle">
+						<span>{{ activeBackgroundLabel }} ·
+							{{ activeAmbiencePreset.tone }}</span>
 						<strong>{{
 							roomMusicDataUrl ? roomMusicName : '主持人尚未上传房间音乐'
 						}}</strong>
@@ -3249,235 +3632,126 @@ function formatTime(time: string) {
 					<div class="host-console-local">
 						<div class="background-choice">
 							<span>使用房间背景</span>
-							<el-switch
-								v-model="useHostBackground"
-								inline-prompt
-								active-text="使用"
-								inactive-text="默认"
-							/>
+							<el-switch v-model="useHostBackground" inline-prompt active-text="使用" inactive-text="默认" />
 						</div>
 						<div class="background-choice">
 							<span>播放房间音乐</span>
-							<el-switch
-								v-model="useRoomMusic"
-								:disabled="!roomMusicDataUrl"
-								inline-prompt
-								active-text="开启"
-								inactive-text="关闭"
-							/>
+							<el-switch v-model="useRoomMusic" :disabled="!roomMusicDataUrl" inline-prompt active-text="开启"
+								inactive-text="关闭" />
 						</div>
 					</div>
 					<div class="host-console-grid">
-						<el-button
-							:icon="musicPlaying ? VideoPause : VideoPlay"
-							:disabled="!roomMusicDataUrl"
-							@click="toggleMusicPlayback"
-							plain
-							>{{ musicPlaying ? '暂停音乐' : '播放音乐' }}</el-button
-						>
+						<el-button :icon="musicPlaying ? VideoPause : VideoPlay" :disabled="!roomMusicDataUrl"
+							@click="toggleMusicPlayback" plain>{{ musicPlaying ? '暂停音乐' : '播放音乐' }}</el-button>
 					</div>
 					<div class="volume-control">
 						<span>音乐音量</span>
-						<el-slider
-							v-model="ambienceVolume"
-							:min="0"
-							:max="100"
-							:disabled="!roomMusicDataUrl"
-						/>
+						<el-slider v-model="ambienceVolume" :min="0" :max="100" :disabled="!roomMusicDataUrl" />
 					</div>
 				</div>
 
-				<div
-					v-if="canHost"
-					v-show="activePanel === 'answer'"
-					class="tool-panel"
-				>
+				<div v-if="canHost" v-show="activePanel === 'answer'" class="tool-panel">
 					<div class="answer-tools">
-						<el-switch
-							v-model="answerHidden"
-							active-text="隐藏"
-							inactive-text="显示"
-							inline-prompt
-						/>
+						<el-switch v-model="answerHidden" active-text="隐藏" inactive-text="显示" inline-prompt />
 					</div>
-					<el-button
-						v-if="canHost && room"
-						type="warning"
-						class="wide-button reveal-button"
-						:disabled="room.revealed"
-						@click="revealAnswer"
-					>
+					<el-button v-if="canHost && room" type="warning" class="wide-button reveal-button" :disabled="room.revealed"
+						@click="revealAnswer">
 						{{ room.revealed ? '已揭秘' : '揭秘汤底并结算积分' }}
 					</el-button>
-					<RichTextEditor
-						v-if="canHost && room"
-						v-model="room.answer"
-						:min-rows="9"
-						placeholder="只有主持人需要知道的汤底"
-						@input="queueRoomSave"
-					/>
+					<RichTextEditor v-if="canHost && room" v-model="room.answer" :min-rows="9" placeholder="只有主持人需要知道的汤底"
+						@input="queueRoomSave" />
 					<div v-else-if="answerHidden" class="hidden-answer">
 						<CircleClose />
 						<span>汤底已隐藏</span>
 					</div>
-					<p
-						v-else
-						class="answer-text rich-display"
-						v-html="sanitizeRichText(room?.answer ?? '暂无汤底')"
-					/>
+					<p v-else class="answer-text rich-display" v-html="sanitizeRichText(room?.answer ?? '暂无汤底')" />
 				</div>
 
 				<div v-show="activePanel === 'canvas'" class="tool-panel">
 					<div class="brush-toolbar">
 						<el-color-picker v-model="brushColor" :disabled="!canHost" />
-						<el-slider
-							v-model="brushSize"
-							:min="2"
-							:max="22"
-							:disabled="!canHost"
-						/>
+						<el-slider v-model="brushSize" :min="2" :max="22" :disabled="!canHost" />
 						<el-tooltip content="清空画板">
-							<el-button
-								:icon="Delete"
-								circle
-								:disabled="!canHost"
-								@click="clearCanvas()"
-							/>
+							<el-button :icon="Delete" circle :disabled="!canHost" @click="clearCanvas()" />
 						</el-tooltip>
 					</div>
 					<div ref="canvasWrapRef" class="canvas-wrap">
-						<canvas
-							ref="canvasRef"
-							:class="{ readonly: !canHost }"
-							@pointerdown="startDrawing"
-							@pointermove="draw"
-							@pointerup="stopDrawing"
-							@pointercancel="stopDrawing"
-							@pointerleave="stopDrawing"
-						/>
+						<canvas ref="canvasRef" :class="{ readonly: !canHost }" @pointerdown="startDrawing" @pointermove="draw"
+							@pointerup="stopDrawing" @pointercancel="stopDrawing" @pointerleave="stopDrawing" />
 					</div>
 				</div>
 			</section>
 
-			<el-dialog
-				v-model="customSoupOpen"
-				:title="editingSoupId ? '编辑汤面' : '自建汤面'"
-				width="min(720px, 92vw)"
-				><el-form
-					ref="customSoupFormRef"
-					:model="customSoup"
-					:rules="customSoupRules"
-					label-position="top"
-					><el-form-item label="标题" prop="title"
-						><el-input v-model="customSoup.title" /></el-form-item
-					><el-form-item label="汤面" prop="surface"
-						><RichTextEditor
-							v-model="customSoup.surface"
-							:min-rows="5"
-							placeholder="写下可公开给玩家的汤面"
-							@blur="
-								customSoupFormRef?.validateField('surface')
-							" /></el-form-item
-					><el-form-item label="汤底" prop="answer"
-						><RichTextEditor
-							v-model="customSoup.answer"
-							:min-rows="6"
-							placeholder="写下最终真相、关键线索和解释"
-							@blur="customSoupFormRef?.validateField('answer')"
-					/></el-form-item>
+			<el-dialog v-model="customSoupOpen" :title="editingSoupId ? '编辑汤面' : '自建汤面'" width="min(720px, 92vw)"><el-form
+					ref="customSoupFormRef" :model="customSoup" :rules="customSoupRules" label-position="top"><el-form-item
+						label="标题" prop="title"><el-input v-model="customSoup.title" /></el-form-item><el-form-item label="汤面"
+						prop="surface">
+						<RichTextEditor v-model="customSoup.surface" :min-rows="5" placeholder="写下可公开给玩家的汤面" @blur="
+							customSoupFormRef?.validateField('surface')
+							" />
+					</el-form-item><el-form-item label="汤底" prop="answer">
+						<RichTextEditor v-model="customSoup.answer" :min-rows="6" placeholder="写下最终真相、关键线索和解释"
+							@blur="customSoupFormRef?.validateField('answer')" />
+					</el-form-item>
 					<div class="dialog-grid">
-						<el-form-item label="分类" prop="category"
-							><el-input v-model="customSoup.category" /></el-form-item
-						><el-form-item label="难度" prop="difficulty"
-							><el-select v-model="customSoup.difficulty"
-								><el-option label="入门" value="easy" /><el-option
-									label="标准"
-									value="medium" /><el-option
-									label="困难"
-									value="hard" /></el-select
-						></el-form-item></div></el-form
-				><template #footer
-					><el-button @click="closeCustomSoupDialog">取消</el-button
-					><el-button
-						type="primary"
+						<el-form-item label="分类" prop="category"><el-input
+								v-model="customSoup.category" /></el-form-item><el-form-item label="难度" prop="difficulty"><el-select
+								v-model="customSoup.difficulty"><el-option label="入门" value="easy" /><el-option label="标准"
+									value="medium" /><el-option label="困难" value="hard" /></el-select></el-form-item>
+					</div>
+				</el-form><template #footer><el-button @click="closeCustomSoupDialog">取消</el-button><el-button type="primary"
 						:loading="creatingSoup"
-						@click="createCustomSoup"
-						>{{ editingSoupId ? '保存修改' : '保存汤面' }}</el-button
-					></template
-				></el-dialog
-			>
-			<el-drawer
-				v-model="soupManagerOpen"
-				:direction="soupDrawerDirection"
-				:size="isMobile ? '78%' : '420px'"
-				class="soup-manager-drawer"
-				title="我的题库"
-			>
+						@click="createCustomSoup">{{ editingSoupId ? '保存修改' : '保存汤面' }}</el-button></template></el-dialog>
+			<Teleport to="body">
+				<div v-if="isMobile" class="qa-mobile-dock">
+					<div v-if="mobileRecentMyQuestions.length"
+						:class="['mobile-my-questions', { collapsed: !mobileAskExpanded }]">
+						<button class="mobile-ask-toggle" type="button" @click="mobileAskExpanded = !mobileAskExpanded">
+							<span>我的提问</span>
+							<b>{{ mobileAskExpanded ? '收起' : '展开' }}</b>
+						</button>
+						<div v-show="mobileAskExpanded" class="mobile-my-question-list">
+							<button v-for="question in mobileRecentMyQuestions" :key="question.id" type="button"
+								class="mobile-my-question" @click="revealQuestion(question.id)">
+								<span class="mobile-my-question-text">{{ question.text }}</span>
+								<span class="mobile-my-question-state">{{
+									question.verdict ? verdictLabels[question.verdict] : '待判定'
+								}}</span>
+							</button>
+						</div>
+					</div>
+					<div class="ask-row mobile-sticky-ask">
+						<el-input ref="questionInputRef" v-model="questionText" size="large" placeholder="输入问题，例如：这个人认识厨师吗？"
+							:disabled="!user || !room" @keyup.enter="addQuestion" /><el-button type="primary" size="large"
+							:icon="Right" :loading="sendingQuestion" :disabled="!user || !room" @click="addQuestion">发送</el-button>
+					</div>
+				</div>
+			</Teleport>
+			<el-drawer v-model="soupManagerOpen" :direction="soupDrawerDirection" :size="isMobile ? '78%' : '420px'"
+				class="soup-manager-drawer" title="我的题库">
 				<div class="soup-manager">
-					<el-empty
-						v-if="!soups.length"
-						description="还没有自己的汤面"
-						:image-size="72"
-					/>
-					<button
-						v-for="soup in soups"
-						v-else
-						:key="soup.id"
-						:class="[
-							'soup-manage-item',
-							{ active: selectedSoupId === soup.id },
-						]"
-						type="button"
-						@click="selectedSoupId = soup.id"
-					>
-						<span class="soup-manage-copy"
-							><strong>{{ soup.title }}</strong
-							><small
-								>{{ soup.category || '自建' }} ·
-								{{ difficultyLabels[soup.difficulty] }}</small
-							><em class="rich-display" v-html="sanitizeRichText(soup.surface)"
-						/></span>
+					<el-empty v-if="!soups.length" description="还没有自己的汤面" :image-size="72" />
+					<button v-for="soup in soups" v-else :key="soup.id" :class="[
+						'soup-manage-item',
+						{ active: selectedSoupId === soup.id },
+					]" type="button" @click="selectedSoupId = soup.id">
+						<span class="soup-manage-copy"><strong>{{ soup.title }}</strong><small>{{ soup.category || '自建' }} ·
+								{{ difficultyLabels[soup.difficulty] }}</small><em class="rich-display"
+								v-html="sanitizeRichText(soup.surface)" /></span>
 						<span class="soup-manage-actions">
-							<el-button
-								round
-								plain
-								:icon="EditPen"
-								@click.stop="openEditSoupDialog(soup)"
-								>编辑</el-button
-							><el-button
-								round
-								type="danger"
-								plain
-								:icon="Delete"
-								:loading="deletingSoupId === soup.id"
-								@click.stop="deleteSoup(soup)"
-								>删除</el-button
-							>
+							<el-button round plain :icon="EditPen" @click.stop="openEditSoupDialog(soup)">编辑</el-button><el-button
+								round type="danger" plain :icon="Delete" :loading="deletingSoupId === soup.id"
+								@click.stop="deleteSoup(soup)">删除</el-button>
 						</span>
 					</button>
 				</div>
 			</el-drawer>
-			<el-drawer
-				v-model="insightDrawerOpen"
-				:direction="soupDrawerDirection"
-				:size="isMobile ? '72%' : '460px'"
-				class="insight-drawer"
-				:title="activeInsightTitle"
-			>
+			<el-drawer v-model="insightDrawerOpen" :direction="soupDrawerDirection" :size="isMobile ? '72%' : '460px'"
+				class="insight-drawer" :title="activeInsightTitle">
 				<div class="insight-drawer-list">
-					<el-empty
-						v-if="!activeInsightQuestions.length"
-						:description="activeInsightTitle + '暂无内容'"
-						:image-size="72"
-					/>
-					<button
-						v-for="question in activeInsightQuestions"
-						v-else
-						:key="question.id"
-						class="insight-drawer-item"
-						type="button"
-						@click="revealQuestion(question.id)"
-					>
+					<el-empty v-if="!activeInsightQuestions.length" :description="activeInsightTitle + '暂无内容'" :image-size="72" />
+					<button v-for="question in activeInsightQuestions" v-else :key="question.id" class="insight-drawer-item"
+						type="button" @click="revealQuestion(question.id)">
 						<span class="insight-drawer-meta">
 							<el-avatar :size="24" :src="question.author.avatarDataUrl">{{
 								question.author.displayName.slice(0, 1)
@@ -3486,87 +3760,209 @@ function formatTime(time: string) {
 							<time>{{ formatTime(question.createdAt) }}</time>
 						</span>
 						<span class="insight-drawer-text">{{ question.text }}</span>
-						<el-tag
-							v-if="question.verdict"
-							:type="verdictTypes[question.verdict]"
-							effect="dark"
-							round
-							>{{ verdictLabels[question.verdict] }}</el-tag
-						>
+						<el-tag v-if="question.verdict" :type="verdictTypes[question.verdict]" effect="dark"
+							round>{{ verdictLabels[question.verdict] }}</el-tag>
 					</button>
 				</div>
 			</el-drawer>
-			<el-dialog
-				v-model="memberDialogOpen"
-				:title="(selectedMember?.displayName ?? '') + ' 的重要内容'"
-				width="min(680px, 92vw)"
-				><el-empty
-					v-if="!selectedMember?.importantQuestions.length"
-					description="这个用户暂无重要内容"
-				/>
+			<el-drawer v-model="thoughtBoardOpen" direction="btt" :size="thoughtBoardDrawerSize" class="thought-board-drawer"
+				title="个人思路板">
+				<div class="thought-board-shell">
+					<div v-if="!isMobile" class="thought-resize-handle" @pointerdown="startThoughtBoardResize"
+						@dblclick="maximizeThoughtBoard">
+						<span />
+						<button type="button" @click.stop="maximizeThoughtBoard">全屏</button>
+					</div>
+					<div class="thought-toolbar">
+						<div class="thought-counts">
+							<span>重要 {{ thoughtNodeStats.important }}</span>
+							<span>是 {{ thoughtNodeStats.yes }}</span>
+							<span>不是 {{ thoughtNodeStats.no }}</span>
+							<span>推理 {{ thoughtNodeStats.custom }}</span>
+							<span>文字 {{ thoughtTexts.length }}</span>
+						</div>
+						<div class="thought-actions">
+							<el-input v-model="thoughtDraftText" size="small" placeholder="添加自己的推理节点" @keyup.enter="addThoughtNode" />
+							<el-button size="small" :icon="Plus" @click="addThoughtNode">添加</el-button>
+							<el-button size="small" :icon="Refresh" @click="syncThoughtBoard">同步线索</el-button>
+						</div>
+					</div>
+					<div v-if="selectedThoughtStyleTarget" class="thought-style-tools">
+						<span>{{
+							selectedThoughtStyleTarget.type === 'text' ? '文字样式' : '连线文字'
+						}}</span>
+						<label>
+							颜色
+							<input v-model="selectedThoughtColor" class="thought-style-color" type="color" />
+						</label>
+						<label>
+							字号
+							<input class="thought-style-size" type="number" min="12" max="42" :value="selectedThoughtFontSize"
+								@input="updateSelectedThoughtFontSize" />
+						</label>
+					</div>
+					<p :class="['thought-link-tip', { idle: !draggingThoughtLink }]">
+						{{
+							draggingThoughtLink
+								? '拖到其他节点四向小点附近松开，连线会自动吸附'
+								: '拖动矩形整理思路；双击空白处添加文字；双击线条编辑关系名'
+						}}
+					</p>
+					<div class="thought-canvas-wrap">
+						<div class="thought-canvas" :style="{
+							minWidth: thoughtBoardWidth + 'px',
+							height: THOUGHT_BOARD_HEIGHT + 'px',
+						}" @dblclick="handleThoughtCanvasDoubleClick">
+							<svg class="thought-links" :width="thoughtBoardWidth" :height="THOUGHT_BOARD_HEIGHT"
+								:viewBox="`0 0 ${thoughtBoardWidth} ${THOUGHT_BOARD_HEIGHT}`" aria-hidden="true">
+								<g v-for="{ link, geometry } in thoughtLinkViews" :key="link.id">
+									<path :class="{ selected: selectedThoughtLinkId === link.id }" :d="geometry.path"
+										@click.stop="selectThoughtLink(link.id)" @dblclick.stop="editThoughtLink(link.id)" />
+								</g>
+								<path v-if="thoughtLinkPreview" class="preview" :d="thoughtLinkPreview.path" />
+							</svg>
+							<div v-for="{ link, geometry } in thoughtLinkViews" :key="link.id" :class="[
+								'thought-link-label',
+								{
+									selected: selectedThoughtLinkId === link.id,
+									editing: editingThoughtLinkId === link.id,
+								},
+							]" :style="{
+								transform: `translate(${geometry.midX - 68}px, ${geometry.midY - 17}px)`,
+								color: link.color ?? DEFAULT_THOUGHT_TEXT_COLOR,
+								fontSize: `${link.fontSize ?? DEFAULT_THOUGHT_TEXT_SIZE}px`,
+							}" @click.stop="selectThoughtLink(link.id)" @dblclick.stop="editThoughtLink(link.id)">
+								<input v-if="editingThoughtLinkId === link.id" :data-thought-link-input="link.id" :value="link.label"
+									placeholder="关系" @input="
+										updateThoughtLinkLabel(
+											link.id,
+											($event.target as HTMLInputElement).value,
+										)
+										" @blur="editingThoughtLinkId = ''" @keyup.enter="editingThoughtLinkId = ''" />
+								<span v-else>{{ link.label || '双击命名' }}</span>
+								<button type="button" aria-label="删除连线" @click.stop="removeThoughtLink(link.id)">
+									×
+								</button>
+							</div>
+							<div v-for="item in thoughtTexts" :key="item.id" :class="[
+								'thought-text',
+								{
+									selected: selectedThoughtTextId === item.id,
+									editing: editingThoughtTextId === item.id,
+								},
+							]" :style="{
+								transform: `translate(${item.x}px, ${item.y}px)`,
+								color: item.color,
+								fontSize: `${item.fontSize}px`,
+							}" @pointerdown="startThoughtTextDrag($event, item)" @pointermove="moveThoughtTextDrag"
+								@pointerup="stopThoughtTextDrag" @pointercancel="stopThoughtTextDrag"
+								@click.stop="selectThoughtText(item.id)" @dblclick.stop.prevent="editThoughtText(item.id)">
+								<textarea v-if="editingThoughtTextId === item.id" :data-thought-text-input="item.id" :value="item.text"
+									rows="2" @input="
+										updateThoughtText(
+											item.id,
+											($event.target as HTMLTextAreaElement).value,
+										)
+										" @blur="editingThoughtTextId = ''" @pointerdown.stop @dblclick.stop />
+								<span v-else>{{ item.text }}</span>
+								<button v-if="selectedThoughtTextId === item.id" type="button" aria-label="删除文字"
+									@click.stop="removeThoughtText(item.id)">
+									×
+								</button>
+							</div>
+							<article v-for="node in thoughtNodes" :key="node.id" :class="thoughtNodeClass(node)" :style="{
+								transform: `translate(${node.x}px, ${node.y}px)`,
+								width: node.width + 'px',
+								minHeight: node.height + 'px',
+							}" @pointerdown="startThoughtDrag($event, node)" @pointermove="moveThoughtDrag" @pointerup="stopThoughtDrag"
+								@pointercancel="stopThoughtDrag" @click.stop="selectThoughtNode(node)">
+								<button type="button" class="thought-connector top" aria-label="从上侧连接"
+									@pointerdown.stop="startThoughtLinkDrag($event, node, 'top')" @pointermove.stop="moveThoughtLinkDrag"
+									@pointerup.stop="stopThoughtLinkDrag" @pointercancel.stop="stopThoughtLinkDrag" />
+								<button type="button" class="thought-connector left" aria-label="从左侧连接"
+									@pointerdown.stop="startThoughtLinkDrag($event, node, 'left')" @pointermove.stop="moveThoughtLinkDrag"
+									@pointerup.stop="stopThoughtLinkDrag" @pointercancel.stop="stopThoughtLinkDrag" />
+								<button type="button" class="thought-connector right" aria-label="从右侧连接"
+									@pointerdown.stop="startThoughtLinkDrag($event, node, 'right')"
+									@pointermove.stop="moveThoughtLinkDrag" @pointerup.stop="stopThoughtLinkDrag"
+									@pointercancel.stop="stopThoughtLinkDrag" />
+								<button type="button" class="thought-connector bottom" aria-label="从下侧连接"
+									@pointerdown.stop="startThoughtLinkDrag($event, node, 'bottom')"
+									@pointermove.stop="moveThoughtLinkDrag" @pointerup.stop="stopThoughtLinkDrag"
+									@pointercancel.stop="stopThoughtLinkDrag" />
+								<header>
+									<span>{{ thoughtNodeLabel(node.kind) }}</span>
+									<button type="button" aria-label="删除节点" @click.stop="removeThoughtNode(node.id)">
+										×
+									</button>
+								</header>
+								<textarea :value="node.text" rows="4" @input="
+									updateThoughtNodeText(
+										node.id,
+										($event.target as HTMLTextAreaElement).value,
+									)
+									" @pointerdown.stop />
+								<footer v-if="node.sourceQuestionId">
+									<button type="button" @click.stop="revealQuestion(node.sourceQuestionId)">
+										查看原问答
+									</button>
+								</footer>
+							</article>
+						</div>
+					</div>
+					<!-- <el-popover v-model:visible="thoughtReferenceOpen" width="min(340px, calc(100vw - 28px))" placement="top-end"
+						trigger="click" popper-class="thought-reference-popper" teleported>
+						<template #reference>
+							<button class="thought-reference-fab" type="button" aria-label="打开汤面汤底">
+								<InfoFilled />
+							</button>
+						</template>
+						<div class="thought-reference-pop">
+							<div class="thought-reference-block">
+								<strong>汤面</strong>
+								<p v-html="sanitizeRichText(room?.surface || '')" />
+							</div>
+							<div class="thought-reference-block">
+								<strong>汤底</strong>
+								<p v-html="sanitizeRichText(room?.answer || '暂无汤底')" />
+							</div>
+						</div>
+					</el-popover> -->
+				</div>
+			</el-drawer>
+			<el-dialog v-model="memberDialogOpen" :title="(selectedMember?.displayName ?? '') + ' 的重要内容'"
+				width="min(680px, 92vw)"><el-empty v-if="!selectedMember?.importantQuestions.length" description="这个用户暂无重要内容" />
 				<div v-else class="member-clues clue-card-grid">
-					<article
-						v-for="question in selectedMember.importantQuestions"
-						:key="question.id"
-						class="clue-item"
-					>
+					<article v-for="question in selectedMember.importantQuestions" :key="question.id" class="clue-item">
 						<div class="clue-card-top">
-							<el-avatar
-								:size="24"
-								:src="selectedMember.avatarDataUrl"
-								class="clue-avatar"
-								>{{ selectedMember.displayName.slice(0, 1) }}</el-avatar
-							>
+							<el-avatar :size="24" :src="selectedMember.avatarDataUrl"
+								class="clue-avatar">{{ selectedMember.displayName.slice(0, 1) }}</el-avatar>
 							<div class="clue-card-author">
-								<strong>{{ selectedMember.displayName }}</strong
-								><time>{{ formatTime(question.createdAt) }}</time>
+								<strong>{{ selectedMember.displayName }}</strong><time>{{ formatTime(question.createdAt) }}</time>
 							</div>
 						</div>
 						<p class="clue-card-text">{{ question.text }}</p>
 						<div class="public-score-tags compact">
-							<el-tag
-								v-for="tag in questionSignalTags(question)"
-								:key="tag.key"
-								:type="tag.type"
-								:effect="tag.effect"
-								round
-								>{{ tag.label }}</el-tag
-							>
+							<el-tag v-for="tag in questionSignalTags(question)" :key="tag.key" :type="tag.type" :effect="tag.effect"
+								round>{{ tag.label }}</el-tag>
 						</div>
-						<el-tag
-							v-if="question.verdict"
-							class="clue-verdict-tag"
-							:class="question.verdict"
-							:type="verdictTypes[question.verdict]"
-							effect="plain"
-							round
-							>{{ verdictLabels[question.verdict] }}</el-tag
-						>
+						<el-tag v-if="question.verdict" class="clue-verdict-tag" :class="question.verdict"
+							:type="verdictTypes[question.verdict]" effect="plain" round>{{ verdictLabels[question.verdict] }}</el-tag>
 					</article>
-				</div></el-dialog
-			>
-			<el-dialog
-				v-model="soupHistoryDetailOpen"
-				:title="selectedSoupHistoryItem?.title ?? '汤面记录'"
-				width="min(760px, 94vw)"
-			>
+				</div>
+			</el-dialog>
+			<el-dialog v-model="soupHistoryDetailOpen" :title="selectedSoupHistoryItem?.title ?? '汤面记录'"
+				width="min(760px, 94vw)">
 				<div v-if="selectedSoupHistoryItem" class="soup-history-detail">
 					<section class="history-detail-section">
 						<span>汤底</span>
-						<div
-							class="rich-display"
-							v-html="sanitizeRichText(selectedSoupHistoryItem.answer)"
-						/>
+						<div class="rich-display" v-html="sanitizeRichText(selectedSoupHistoryItem.answer)" />
 					</section>
 					<section class="history-detail-grid">
 						<div class="history-detail-section">
 							<span>评分</span>
 							<div class="history-rating-line">
-								<el-rate
-									:model-value="selectedSoupHistoryItem.ratingAverage || 0"
-									disabled
-									allow-half
-								/>
+								<el-rate :model-value="selectedSoupHistoryItem.ratingAverage || 0" disabled allow-half />
 								<strong>{{
 									selectedSoupHistoryItem.ratingCount
 										? `${selectedSoupHistoryItem.ratingAverage} 分`
@@ -3581,171 +3977,104 @@ function formatTime(time: string) {
 						</div>
 						<div class="history-detail-section">
 							<span>MVP</span>
-							<div
-								v-if="getHistoryMvpUser(selectedSoupHistoryItem)"
-								class="history-mvp-line"
-							>
-								<el-avatar
-									:size="38"
-									:src="
-										getHistoryMvpUser(selectedSoupHistoryItem)?.avatarDataUrl
-									"
-									>{{
+							<div v-if="getHistoryMvpUser(selectedSoupHistoryItem)" class="history-mvp-line">
+								<el-avatar :size="38" :src="getHistoryMvpUser(selectedSoupHistoryItem)?.avatarDataUrl
+									">{{
 										getHistoryMvpUser(
 											selectedSoupHistoryItem,
 										)?.displayName.slice(0, 1)
-									}}</el-avatar
-								>
+									}}</el-avatar>
 								<div>
 									<strong>{{
 										getHistoryMvpUser(selectedSoupHistoryItem)?.displayName
 									}}</strong>
-									<small
-										>{{ getHistoryMvpUser(selectedSoupHistoryItem)?.rankTitle }}
+									<small>{{ getHistoryMvpUser(selectedSoupHistoryItem)?.rankTitle }}
 										·
 										{{ getHistoryMvpUser(selectedSoupHistoryItem)?.points }}
-										分</small
-									>
+										分</small>
 								</div>
 							</div>
 							<p v-else>暂未评定 MVP</p>
 						</div>
 					</section>
-					<section
-						v-if="getHistoryMvpQuestions(selectedSoupHistoryItem).length"
-						class="history-detail-section"
-					>
+					<section v-if="getHistoryMvpQuestions(selectedSoupHistoryItem).length" class="history-detail-section">
 						<span>MVP 重要线索</span>
 						<div class="mvp-clue-list">
-							<article
-								v-for="question in getHistoryMvpQuestions(
-									selectedSoupHistoryItem,
-								)"
-								:key="question.id"
-								class="mvp-clue-card"
-							>
+							<article v-for="question in getHistoryMvpQuestions(
+								selectedSoupHistoryItem,
+							)" :key="question.id" class="mvp-clue-card">
 								<div class="question-meta">
 									<span>{{ question.author.displayName }}</span>
 									<time>{{ formatTime(question.createdAt) }}</time>
 								</div>
 								<p>{{ question.text }}</p>
 								<div class="public-score-tags compact">
-									<el-tag
-										v-for="tag in questionSignalTags(question)"
-										:key="tag.key"
-										:type="tag.type"
-										:effect="tag.effect"
-										round
-										>{{ tag.label }}</el-tag
-									>
+									<el-tag v-for="tag in questionSignalTags(question)" :key="tag.key" :type="tag.type"
+										:effect="tag.effect" round>{{ tag.label }}</el-tag>
 								</div>
-								<el-tag
-									v-if="question.verdict"
-									class="clue-verdict-tag"
-									:class="question.verdict"
-									:type="verdictTypes[question.verdict]"
-									effect="plain"
-									round
-									>{{ verdictLabels[question.verdict] }}</el-tag
-								>
+								<el-tag v-if="question.verdict" class="clue-verdict-tag" :class="question.verdict"
+									:type="verdictTypes[question.verdict]" effect="plain"
+									round>{{ verdictLabels[question.verdict] }}</el-tag>
 							</article>
 						</div>
 					</section>
 				</div>
 			</el-dialog>
-			<el-dialog
-				v-model="settlementDialogOpen"
-				title="本局积分排行榜"
-				width="min(820px, 94vw)"
-				@closed="handleSettlementClosed"
-				><div v-if="settlement" class="settlement-board">
+			<el-dialog v-model="settlementDialogOpen" title="本局积分排行榜" width="min(820px, 94vw)"
+				@closed="handleSettlementClosed">
+				<div v-if="settlement" class="settlement-board">
 					<div class="answer-reveal">
 						<span>汤底</span>
-						<p
-							class="rich-display"
-							v-html="sanitizeRichText(settlement.answer)"
-						/>
+						<p class="rich-display" v-html="sanitizeRichText(settlement.answer)" />
 					</div>
 					<div class="rating-panel">
 						<div>
 							<strong>本局汤面评分</strong>
-							<span v-if="currentSoupRating?.ratingCount"
-								>{{ currentSoupRating.ratingAverage }} 分 ·
-								{{ currentSoupRating.ratingCount }} 人评分</span
-							><span v-else>等待玩家评分</span>
+							<span v-if="currentSoupRating?.ratingCount">{{ currentSoupRating.ratingAverage }} 分 ·
+								{{ currentSoupRating.ratingCount }} 人评分</span><span v-else>等待玩家评分</span>
 						</div>
-						<el-rate
-							v-if="canRateCurrentSoup"
-							:model-value="mySoupRating"
-							@change="(value: number) => rateCurrentSoup(value)"
-						/>
+						<el-rate v-if="canRateCurrentSoup" :model-value="mySoupRating"
+							@change="(value: number) => rateCurrentSoup(value)" />
 						<p v-else>
 							{{ canHost ? '主持人不能参与评分' : '玩家可在揭秘后评分' }}
 						</p>
 					</div>
 					<div class="rank-list">
-						<div
-							v-for="entry in settlement.entries"
-							:key="entry.user.id"
-							class="rank-row"
-						>
-							<strong class="rank-number">#{{ entry.rank }}</strong
-							><el-avatar :size="42" :src="entry.user.avatarDataUrl">{{
-								entry.user.displayName.slice(0, 1)
-							}}</el-avatar>
+						<div v-for="entry in settlement.entries" :key="entry.user.id" class="rank-row">
+							<strong class="rank-number">#{{ entry.rank }}</strong><el-avatar :size="42"
+								:src="entry.user.avatarDataUrl">{{
+									entry.user.displayName.slice(0, 1)
+								}}</el-avatar>
 							<div class="rank-user">
-								<b>{{ entry.user.displayName }}</b
-								><span
-									>{{ entry.user.rankTitle }} · 累计
-									{{ entry.user.points }} 分</span
-								>
+								<b>{{ entry.user.displayName }}</b><span>{{ entry.user.rankTitle }} · 累计
+									{{ entry.user.points }} 分</span>
 							</div>
 							<strong class="rank-score">+{{ entry.total }}</strong>
 							<div class="rank-breakdown">
-								<el-tag
-									v-for="(points, label) in entry.breakdown"
-									:key="label"
-									effect="plain"
-									round
-									>{{ label }} +{{ points }}</el-tag
-								>
+								<el-tag v-for="(points, label) in entry.breakdown" :key="label" effect="plain" round>{{ label }}
+									+{{ points }}</el-tag>
 							</div>
 						</div>
 					</div>
-				</div></el-dialog
-			>
-			<el-dialog
-				v-model="mvpSelectDialogOpen"
-				title="评定本轮 MVP"
-				width="min(760px, 94vw)"
-				:close-on-click-modal="false"
-				:close-on-press-escape="false"
-				:show-close="false"
-			>
+				</div>
+			</el-dialog>
+			<el-dialog v-model="mvpSelectDialogOpen" title="评定本轮 MVP" width="min(760px, 94vw)" :close-on-click-modal="false"
+				:close-on-press-escape="false" :show-close="false">
 				<div class="mvp-select-board">
 					<p class="mvp-copy">
 						选择一位本轮 MVP。主持人不可被选择，提交后会立即向房间内玩家公布。
 					</p>
-					<el-radio-group
-						v-model="selectedMvpUserId"
-						class="mvp-candidate-grid"
-					>
-						<label
-							v-for="candidate in mvpCandidates"
-							:key="candidate.id"
-							class="mvp-candidate-card"
-							:class="{ active: selectedMvpUserId === candidate.id }"
-						>
+					<el-radio-group v-model="selectedMvpUserId" class="mvp-candidate-grid">
+						<label v-for="candidate in mvpCandidates" :key="candidate.id" class="mvp-candidate-card"
+							:class="{ active: selectedMvpUserId === candidate.id }">
 							<el-radio :label="candidate.id">
 								<el-avatar :size="38" :src="candidate.avatarDataUrl">{{
 									candidate.displayName.slice(0, 1)
 								}}</el-avatar>
 								<span>
 									<strong>{{ candidate.displayName }}</strong>
-									<small
-										>{{ candidate.rankTitle }} ·
-										{{ candidate.points }} 分</small
-									>
+									<small>{{ candidate.rankTitle }} ·
+										{{ candidate.points }} 分</small>
 								</span>
 							</el-radio>
 						</label>
@@ -3757,60 +4086,31 @@ function formatTime(time: string) {
 							</div>
 							<el-tag round>{{ mvpImportantQuestions.length }}</el-tag>
 						</div>
-						<el-empty
-							v-if="!mvpImportantQuestions.length"
-							description="本轮暂无重要线索"
-							:image-size="54"
-						/>
+						<el-empty v-if="!mvpImportantQuestions.length" description="本轮暂无重要线索" :image-size="54" />
 						<div v-else class="mvp-clue-list">
-							<article
-								v-for="question in mvpImportantQuestions"
-								:key="question.id"
-								class="mvp-clue-card"
-							>
+							<article v-for="question in mvpImportantQuestions" :key="question.id" class="mvp-clue-card">
 								<div class="question-meta">
 									<span>{{ question.author.displayName }}</span>
 									<time>{{ formatTime(question.createdAt) }}</time>
 								</div>
 								<p>{{ question.text }}</p>
 								<div class="public-score-tags compact">
-									<el-tag
-										v-for="tag in questionSignalTags(question)"
-										:key="tag.key"
-										:type="tag.type"
-										:effect="tag.effect"
-										round
-										>{{ tag.label }}</el-tag
-									>
+									<el-tag v-for="tag in questionSignalTags(question)" :key="tag.key" :type="tag.type"
+										:effect="tag.effect" round>{{ tag.label }}</el-tag>
 								</div>
-								<el-tag
-									v-if="question.verdict"
-									class="clue-verdict-tag"
-									:class="question.verdict"
-									:type="verdictTypes[question.verdict]"
-									effect="plain"
-									round
-									>{{ verdictLabels[question.verdict] }}</el-tag
-								>
+								<el-tag v-if="question.verdict" class="clue-verdict-tag" :class="question.verdict"
+									:type="verdictTypes[question.verdict]" effect="plain"
+									round>{{ verdictLabels[question.verdict] }}</el-tag>
 							</article>
 						</div>
 					</section>
 				</div>
 				<template #footer>
-					<el-button
-						type="primary"
-						:loading="mvpSubmitting"
-						:disabled="!selectedMvpUserId"
-						@click="submitMvpSelection"
-						>公布 MVP</el-button
-					>
+					<el-button type="primary" :loading="mvpSubmitting" :disabled="!selectedMvpUserId"
+						@click="submitMvpSelection">公布 MVP</el-button>
 				</template>
 			</el-dialog>
-			<el-dialog
-				v-model="mvpResultDialogOpen"
-				title="本轮 MVP"
-				width="min(780px, 94vw)"
-			>
+			<el-dialog v-model="mvpResultDialogOpen" title="本轮 MVP" width="min(780px, 94vw)">
 				<div v-if="mvpResult" class="mvp-result-board">
 					<section class="mvp-hero">
 						<el-avatar :size="64" :src="mvpResult.user.avatarDataUrl">{{
@@ -3832,41 +4132,21 @@ function formatTime(time: string) {
 							</div>
 							<el-tag round>{{ mvpResult.importantQuestions.length }}</el-tag>
 						</div>
-						<el-empty
-							v-if="!mvpResult.importantQuestions.length"
-							description="本轮暂无重要线索"
-							:image-size="54"
-						/>
+						<el-empty v-if="!mvpResult.importantQuestions.length" description="本轮暂无重要线索" :image-size="54" />
 						<div v-else class="mvp-clue-list">
-							<article
-								v-for="question in mvpResult.importantQuestions"
-								:key="question.id"
-								class="mvp-clue-card"
-							>
+							<article v-for="question in mvpResult.importantQuestions" :key="question.id" class="mvp-clue-card">
 								<div class="question-meta">
 									<span>{{ question.author.displayName }}</span>
 									<time>{{ formatTime(question.createdAt) }}</time>
 								</div>
 								<p>{{ question.text }}</p>
 								<div class="public-score-tags compact">
-									<el-tag
-										v-for="tag in questionSignalTags(question)"
-										:key="tag.key"
-										:type="tag.type"
-										:effect="tag.effect"
-										round
-										>{{ tag.label }}</el-tag
-									>
+									<el-tag v-for="tag in questionSignalTags(question)" :key="tag.key" :type="tag.type"
+										:effect="tag.effect" round>{{ tag.label }}</el-tag>
 								</div>
-								<el-tag
-									v-if="question.verdict"
-									class="clue-verdict-tag"
-									:class="question.verdict"
-									:type="verdictTypes[question.verdict]"
-									effect="plain"
-									round
-									>{{ verdictLabels[question.verdict] }}</el-tag
-								>
+								<el-tag v-if="question.verdict" class="clue-verdict-tag" :class="question.verdict"
+									:type="verdictTypes[question.verdict]" effect="plain"
+									round>{{ verdictLabels[question.verdict] }}</el-tag>
 							</article>
 						</div>
 					</section>
