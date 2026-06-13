@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+
 import { resolve } from 'node:path'
 
-const targetUrl = 'http://121.196.219.107:3001'
+const targetUrl = 'http://124.222.187.70:3001'
 const envFile = resolve(process.cwd(), '.env.production')
 const key = 'VITE_API_BASE_URL'
 

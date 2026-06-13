@@ -10,7 +10,7 @@ import {
 	Headset,
 	Hide,
 	House,
-	// InfoFilled,
+	InfoFilled,
 	Moon,
 	Picture,
 	Plus,
@@ -533,7 +533,7 @@ const selectedQuestionId = ref('')
 const insightDrawerOpen = ref(false)
 const activeInsightMode = ref<InsightMode>('confirmed')
 const thoughtBoardOpen = ref(false)
-// const thoughtReferenceOpen = ref(true)
+// const thoughtReferenceOpen = ref(false)
 const thoughtNodes = ref<ThoughtNode[]>([])
 const thoughtLinks = ref<ThoughtLink[]>([])
 const thoughtTexts = ref<ThoughtText[]>([])
@@ -688,7 +688,13 @@ const myQuestions = computed(() =>
 		: [],
 )
 const importantQuestions = computed(() =>
-	sortedQuestions.value.filter(question => hasImportantSignal(question)),
+	sortedQuestions.value.filter(question => hasClueSignal(question)),
+)
+const hostImportantHints = computed(() =>
+	sortedQuestions.value.filter(question => isHostImportantHint(question)),
+)
+const hostImportantHintText = computed(() =>
+	hostImportantHints.value.map(question => question.text).join('；'),
 )
 const confirmedQuestions = computed(() =>
 	sortedQuestions.value.filter(question => question.verdict === 'yes'),
@@ -789,7 +795,7 @@ const mobileRecentMyQuestions = computed(() => myQuestions.value.slice(0, 3))
 const thoughtSourceQuestions = computed(() =>
 	sortedQuestions.value.filter(
 		question =>
-			question.important ||
+			(question.important && !isHostImportantHint(question)) ||
 			question.verdict === 'yes' ||
 			question.verdict === 'no',
 	),
@@ -909,7 +915,7 @@ const memberStats = computed<MemberStats[]>(() => {
 		existing.points = question.author.points ?? existing.points
 		existing.rankTitle = question.author.rankTitle ?? existing.rankTitle
 		existing.questionCount += 1
-		if (hasImportantSignal(question)) {
+		if (hasClueSignal(question)) {
 			existing.importantCount += 1
 			existing.importantQuestions.push(question)
 		}
@@ -955,7 +961,7 @@ const mvpImportantQuestions = computed<Question[]>(() =>
 	[...(room.value?.questions ?? [])]
 		.filter(
 			question =>
-				hasImportantSignal(question) &&
+				hasClueSignal(question) &&
 				(!selectedMvpUserId.value ||
 					question.author.id === selectedMvpUserId.value),
 		)
@@ -2210,6 +2216,18 @@ function thoughtNodeLabel(kind: ThoughtNodeKind) {
 	}[kind]
 }
 
+function isHostImportantHint(question: Question) {
+	return Boolean(
+		question.important &&
+		room.value?.host.id &&
+		question.author.id === room.value.host.id,
+	)
+}
+
+function hasClueSignal(question: Question) {
+	return hasImportantSignal(question) && !isHostImportantHint(question)
+}
+
 function getQuestionSortTime(question: Question) {
 	const cached = questionSortTimes.get(question.id)
 	if (typeof cached === 'number') return cached
@@ -3140,6 +3158,12 @@ function formatTime(time: string) {
 
 			<section class="desk-grid">
 				<aside class="story-column">
+					<section v-if="hostImportantHints.length" class="surface-card host-hint-card">
+						<div class="host-hint-row">
+							<strong>主持人提示</strong>
+							<p>{{ hostImportantHintText }}</p>
+						</div>
+					</section>
 					<section class="surface-card story-card">
 						<div class="section-head">
 							<div>
@@ -3234,17 +3258,14 @@ function formatTime(time: string) {
 						</div>
 					</div>
 					<div class="qa-filter-bar">
-						<div class="filter-scroll">
-							<button v-for="option in questionFilterOptions" :key="option.value" :class="[
-								'filter-chip',
-								{ active: questionViewMode === option.value },
-							]" type="button" :disabled="option.disabled" @click="
-								questionViewMode = option.value;
-							selectedQuestionId = ''
-								">
-								<span>{{ option.label }}</span><b>{{ option.count }}</b>
-							</button>
-						</div>
+						<el-tabs v-model="questionViewMode" class="qa-filter-tabs" @tab-change="selectedQuestionId = ''">
+							<el-tab-pane v-for="option in questionFilterOptions" :key="option.value" :name="option.value"
+								:disabled="option.disabled">
+								<template #label>
+									<span class="qa-tab-label"><span>{{ option.label }}</span><b>{{ option.count }}</b></span>
+								</template>
+							</el-tab-pane>
+						</el-tabs>
 						<el-input v-model="questionSearchText" class="qa-search" clearable :prefix-icon="Search"
 							placeholder="搜索问题、玩家、判定或线索标签" @clear="selectedQuestionId = ''" @input="selectedQuestionId = ''" />
 					</div>
@@ -3910,24 +3931,140 @@ function formatTime(time: string) {
 							</article>
 						</div>
 					</div>
-					<!-- <el-popover v-model:visible="thoughtReferenceOpen" width="min(340px, calc(100vw - 28px))" placement="top-end"
-						trigger="click" popper-class="thought-reference-popper" teleported>
-						<template #reference>
-							<button class="thought-reference-fab" type="button" aria-label="打开汤面汤底">
-								<InfoFilled />
-							</button>
-						</template>
-						<div class="thought-reference-pop">
-							<div class="thought-reference-block">
-								<strong>汤面</strong>
-								<p v-html="sanitizeRichText(room?.surface || '')" />
+					<div style="position: fixed;right: 10px;bottom: 50px;z-index: 9999">
+						<!-- <el-popover title="Title" content="Top Center prompts info" placement="top" class="cutsom-popover">
+							<template #reference>
+								<el-button>top</el-button>
+							</template>
+						</el-popover> -->
+						<el-popover class="popover" width="min(340px, calc(100vw - 28px))" placement="top-end" trigger="click"
+							popper-class="thought-reference-popper">
+							<template #reference>
+								<button class="thought-reference-fab" type="button" aria-label="打开汤面汤底">
+									<InfoFilled />
+								</button>
+							</template>
+							<div class="thought-reference-pop">
+								<div class="thought-reference-block">
+									<strong>汤面</strong>
+									<p v-html="sanitizeRichText(room?.surface || '')" />
+								</div>
+								<div class="thought-reference-block">
+									<strong>问答</strong>
+									<div class="timeline">
+										<el-empty v-if="!visibleQuestions.length" :description="sortedQuestions.length
+											? '没有匹配的问答，换个筛选或关键词试试。'
+											: '还没有问题，开汤吧。'
+											" />
+										<article v-for="question in visibleQuestions" :key="question.id" :data-question-id="question.id"
+											:class="[
+												'question-item',
+												{ selected: selectedQuestionId === question.id },
+											]" @click="
+												selectedQuestionId =
+												selectedQuestionId === question.id ? '' : question.id
+												">
+											<div class="question-main">
+												<div class="question-meta">
+													<el-avatar :size="24" :src="question.author.avatarDataUrl">{{
+														question.author.displayName.slice(0, 1)
+													}}</el-avatar>
+													<span>{{ question.author.displayName }}</span><el-tag
+														v-if="question.author.id === room?.host.id" class="host-author-tag"
+														style="background: #ff7f50; border: none" effect="dark" round>
+														<span style="color: white">主持人</span></el-tag>
+													<time>{{ formatTime(question.createdAt) }}</time>
+												</div>
+												<p v-html="highlightQuestionText(question.text)" />
+												<div v-if="
+													question.quality !== 'none' ||
+													question.truthGuess !== 'none' ||
+													question.firstCoreClue ||
+													question.firstMainLogic ||
+													question.firstFullSolve
+												" class="public-score-tags">
+													<el-tag v-if="question.quality !== 'none'" type="success" effect="plain"
+														round>{{ qualityLabels[question.quality] }}</el-tag><el-tag
+														v-if="question.truthGuess !== 'none'" type="warning" effect="plain"
+														round>{{ truthGuessLabels[question.truthGuess] }}</el-tag><el-tag
+														v-if="question.firstCoreClue" type="success" effect="dark" round>首次核心线索</el-tag><el-tag
+														v-if="question.firstMainLogic" type="warning" effect="dark" round>首次主要逻辑</el-tag><el-tag
+														v-if="question.firstFullSolve" type="danger" effect="dark" round>首位完整破解</el-tag>
+												</div>
+											</div>
+											<div class="verdict-zone">
+												<div class="tag-line">
+													<el-tag v-if="question.important" type="warning" effect="dark" round>重要</el-tag><el-tag
+														v-if="question.verdict" :type="verdictTypes[question.verdict]" effect="dark"
+														round>{{ verdictLabels[question.verdict] }}</el-tag><span v-if="!question.verdict"
+														class="waiting">等待主持人</span>
+												</div>
+												<el-button v-if="canHost" size="small" text>{{
+													selectedQuestionId === question.id ? '收起操作' : '主持操作'
+												}}</el-button>
+											</div>
+											<div v-if="canHost && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
+												<div class="host-action-heading">
+													<strong>主持人操作</strong>
+													<small>判定回答、标记线索，并记录本轮积分依据</small>
+												</div>
+												<div class="action-group">
+													<span class="action-title">判定</span><button class="judge yes" type="button"
+														@click="setVerdict(question.id, 'yes')">
+														是</button><button class="judge no" type="button" @click="setVerdict(question.id, 'no')">
+														不是</button><button class="judge both" type="button"
+														@click="setVerdict(question.id, 'both')">
+														是也不是</button><button class="judge mute" type="button"
+														@click="setVerdict(question.id, 'irrelevant')">
+														不重要
+													</button>
+												</div>
+												<div class="action-group">
+													<span class="action-title">标记</span><button
+														:class="['judge', 'flag', { active: question.important }]" type="button"
+														@click="toggleImportant(question)">
+														{{ question.important ? '已标重要' : '标为重要' }}</button><button class="judge delete"
+														type="button" @click="removeQuestion(question.id)">
+														删除
+													</button>
+												</div>
+												<div class="score-grid">
+													<label>问题价值<el-select :model-value="question.quality" size="small" @change="
+														(value: QuestionQuality) =>
+															updateQuestionScoring(question, { quality: value })
+													"><el-option v-for="(label, value) in qualityLabels" :key="value" :label="label"
+																:value="value" /></el-select></label><label>猜中程度<el-select
+															:model-value="question.truthGuess" size="small" @change="
+																(value: TruthGuess) =>
+																	updateQuestionScoring(question, { truthGuess: value })
+															"><el-option v-for="(label, value) in truthGuessLabels" :key="value" :label="label"
+																:value="value" /></el-select></label>
+												</div>
+												<div class="achievement-row">
+													<el-checkbox :model-value="question.firstCoreClue" @change="
+														(value: boolean) =>
+															updateQuestionScoring(question, {
+																firstCoreClue: value,
+															})
+													">首次核心线索</el-checkbox><el-checkbox :model-value="question.firstMainLogic" @change="
+														(value: boolean) =>
+															updateQuestionScoring(question, {
+																firstMainLogic: value,
+															})
+													">首次主要逻辑</el-checkbox><el-checkbox :model-value="question.firstFullSolve" @change="
+														(value: boolean) =>
+															updateQuestionScoring(question, {
+																firstFullSolve: value,
+															})
+													">首位完整破解</el-checkbox>
+												</div>
+											</div>
+										</article>
+									</div>
+								</div>
 							</div>
-							<div class="thought-reference-block">
-								<strong>汤底</strong>
-								<p v-html="sanitizeRichText(room?.answer || '暂无汤底')" />
-							</div>
-						</div>
-					</el-popover> -->
+						</el-popover>
+					</div>
 				</div>
 			</el-drawer>
 			<el-dialog v-model="memberDialogOpen" :title="(selectedMember?.displayName ?? '') + ' 的重要内容'"
