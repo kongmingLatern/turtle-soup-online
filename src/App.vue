@@ -318,13 +318,13 @@ const DEFAULT_AMBIENCE: RoomAmbience = {
 	musicVolume: 56,
 }
 const AMBIENCE_PRESETS: AmbiencePreset[] = [
-	{
-		id: 'light',
-		label: '旧卷',
-		tone: '青灰茶墨',
-		background:
-			'radial-gradient(circle at 16% 10%, rgba(92, 119, 94, 0.28), transparent 28rem), radial-gradient(circle at 88% 14%, rgba(146, 96, 35, 0.2), transparent 26rem), radial-gradient(circle at 42% 92%, rgba(57, 77, 70, 0.18), transparent 30rem), linear-gradient(135deg, #ded3bb, #cfd8c8 46%, #e8dfca)',
-	},
+	// {
+	// 	id: 'light',
+	// 	label: '旧卷',
+	// 	tone: '青灰茶墨',
+	// 	background:
+	// 		'radial-gradient(circle at 16% 10%, rgba(92, 119, 94, 0.28), transparent 28rem), radial-gradient(circle at 88% 14%, rgba(146, 96, 35, 0.2), transparent 26rem), radial-gradient(circle at 42% 92%, rgba(57, 77, 70, 0.18), transparent 30rem), linear-gradient(135deg, #ded3bb, #cfd8c8 46%, #e8dfca)',
+	// },
 	{
 		id: 'mist',
 		label: '雾夜',
