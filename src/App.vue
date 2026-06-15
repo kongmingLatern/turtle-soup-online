@@ -296,7 +296,7 @@ interface QuestionRemoveResponse {
 type QuestionPatchResponse = Question | QuestionMutationResponse | RoomState
 type QuestionDeleteResponse = QuestionRemoveResponse | RoomState
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://124.222.187.70:3001'
 const STORAGE_TOKEN = 'turtle-soup:token'
 const STORAGE_THEME = 'turtle-soup:theme'
 const STORAGE_AMBIENCE_PREFIX = 'turtle-soup:ambience:'
@@ -692,9 +692,6 @@ const importantQuestions = computed(() =>
 )
 const hostImportantHints = computed(() =>
 	sortedQuestions.value.filter(question => isHostImportantHint(question)),
-)
-const hostImportantHintText = computed(() =>
-	hostImportantHints.value.map(question => question.text).join('；'),
 )
 const confirmedQuestions = computed(() =>
 	sortedQuestions.value.filter(question => question.verdict === 'yes'),
@@ -3158,12 +3155,6 @@ function formatTime(time: string) {
 
 			<section class="desk-grid">
 				<aside class="story-column">
-					<section v-if="hostImportantHints.length" class="surface-card host-hint-card">
-						<div class="host-hint-row">
-							<strong>主持人提示</strong>
-							<p>{{ hostImportantHintText }}</p>
-						</div>
-					</section>
 					<section class="surface-card story-card">
 						<div class="section-head">
 							<div>
@@ -3184,6 +3175,16 @@ function formatTime(time: string) {
 							'还没有进入房间。登录后可创建房间，或用房间号加入。',
 						)
 							" />
+					</section>
+					<section v-if="hostImportantHints.length" class="surface-card host-hint-card">
+						<div class="host-hint-row">
+							<strong>主持人提示</strong>
+							<ol class="host-hint-list">
+								<li v-for="hint in hostImportantHints" :key="hint.id">
+									{{ hint.text }}
+								</li>
+							</ol>
+						</div>
 					</section>
 					<section class="surface-card config-card">
 						<div class="section-head compact">
