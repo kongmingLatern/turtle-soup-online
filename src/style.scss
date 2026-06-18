@@ -1702,6 +1702,20 @@ textarea {
   transform: translateY(-1px);
 }
 
+.question-item.pending {
+  opacity: 0.82;
+  border-style: dashed;
+}
+
+.question-item.failed {
+  border-color: color-mix(in srgb, #ef4444 42%, var(--line));
+  background: color-mix(in srgb, #ef4444 8%, var(--surface-strong));
+}
+
+.question-item.failed .question-main p {
+  color: color-mix(in srgb, #ef4444 72%, var(--text));
+}
+
 .question-meta {
   display: flex;
   align-items: center;

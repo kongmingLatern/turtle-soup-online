@@ -89,6 +89,7 @@ interface Question {
 	author: AuthUser
 	createdAt: string
 	answeredAt?: string | null
+	clientStatus?: 'sending' | 'failed'
 }
 
 interface ThoughtNode {
@@ -667,6 +668,7 @@ const presenceNotifyAt = new Map<string, number>()
 const roomAmbienceCache = new Map<string, RoomAmbience>()
 const questionSortTimes = new Map<string, number>()
 const avatarCache = new Map<string, string>()
+const removedQuestionIds = new Set<string>()
 
 const canHost = computed(() =>
 	Boolean(user.value && room.value?.host.id === user.value.id),
@@ -1215,13 +1217,29 @@ function hydrateRoom(data: RoomState): RoomState {
 	return {
 		...data,
 		host: hydrateUserAvatar(data.host),
-		questions: data.questions.map(hydrateQuestion),
+		questions: data.questions
+			.map(hydrateQuestion)
+			.filter(question => !removedQuestionIds.has(question.id)),
+	}
+}
+
+function mergeRoomWithLocalQuestions(data: RoomState): RoomState {
+	const nextRoom = hydrateRoom(data)
+	if (!room.value || room.value.code !== nextRoom.code) return nextRoom
+	const byId = new Map(nextRoom.questions.map(question => [question.id, question]))
+	room.value.questions.forEach(question => {
+		if (removedQuestionIds.has(question.id) || byId.has(question.id)) return
+		byId.set(question.id, question)
+	})
+	return {
+		...nextRoom,
+		questions: [...byId.values()],
 	}
 }
 
 function applyQuestionPatchResponse(response: QuestionPatchResponse) {
 	if (isRoomState(response)) {
-		room.value = hydrateRoom(response)
+		room.value = mergeRoomWithLocalQuestions(response)
 		return
 	}
 	if (isQuestionMutationResponse(response)) {
@@ -1234,6 +1252,7 @@ function applyQuestionPatchResponse(response: QuestionPatchResponse) {
 
 function removeQuestionLocally(questionId: string) {
 	if (!room.value) return
+	removedQuestionIds.add(questionId)
 	room.value.questions = room.value.questions.filter(
 		question => question.id !== questionId,
 	)
@@ -1241,9 +1260,58 @@ function removeQuestionLocally(questionId: string) {
 	if (selectedQuestionId.value === questionId) selectedQuestionId.value = ''
 }
 
+function createPendingQuestion(text: string): Question {
+	const now = new Date().toISOString()
+	const id =
+		typeof crypto?.randomUUID === 'function'
+			? `pending:${crypto.randomUUID()}`
+			: `pending:${Date.now()}-${Math.random().toString(36).slice(2)}`
+	return {
+		id,
+		text,
+		verdict: null,
+		important: false,
+		quality: 'none',
+		truthGuess: 'none',
+		firstCoreClue: false,
+		firstMainLogic: false,
+		firstFullSolve: false,
+		author: hydrateUserAvatar(user.value!),
+		createdAt: now,
+		answeredAt: null,
+		clientStatus: 'sending',
+	}
+}
+
+function removePendingQuestionFor(question: Question) {
+	if (!room.value || question.clientStatus) return
+	const pendingIndex = room.value.questions.findIndex(
+		item =>
+			item.clientStatus === 'sending' &&
+			item.text === question.text &&
+			item.author.id === question.author.id,
+	)
+	if (pendingIndex < 0) return
+	const [pending] = room.value.questions.splice(pendingIndex, 1)
+	questionSortTimes.delete(pending.id)
+}
+
+function replacePendingQuestion(tempId: string, question: Question) {
+	if (!room.value) return
+	room.value.questions = room.value.questions.filter(item => item.id !== tempId)
+	questionSortTimes.delete(tempId)
+	upsertQuestion(question)
+}
+
+function markPendingQuestionFailed(tempId: string) {
+	if (!room.value) return
+	const target = room.value.questions.find(question => question.id === tempId)
+	if (target) target.clientStatus = 'failed'
+}
+
 function applyQuestionDeleteResponse(response: QuestionDeleteResponse) {
 	if (isRoomState(response)) {
-		room.value = hydrateRoom(response)
+		room.value = mergeRoomWithLocalQuestions(response)
 		return
 	}
 	removeQuestionLocally(response.questionId)
@@ -1504,6 +1572,7 @@ function resetRoundState(nextRoom?: RoomState) {
 	if (nextRoom) room.value = hydrateRoom(nextRoom)
 	if (room.value) room.value.questions = []
 	questionSortTimes.clear()
+	removedQuestionIds.clear()
 	questionText.value = ''
 	settlement.value = null
 	settlementDialogOpen.value = false
@@ -2237,6 +2306,7 @@ function getQuestionSortTime(question: Question) {
 function upsertQuestion(question: Question) {
 	if (!room.value) return
 	const nextQuestion = hydrateQuestion(question)
+	removePendingQuestionFor(nextQuestion)
 	getQuestionSortTime(nextQuestion)
 	const index = room.value.questions.findIndex(
 		item => item.id === nextQuestion.id,
@@ -2359,7 +2429,7 @@ function connectSocket(code: string) {
 		})
 		socket.on('room-updated', (nextRoom: RoomState) => {
 			if (nextRoom.code !== room.value?.code) return
-			const hydratedRoom = hydrateRoom(nextRoom)
+			const hydratedRoom = mergeRoomWithLocalQuestions(nextRoom)
 			room.value = hydratedRoom
 			selectedRole.value = canHost.value ? 'host' : 'player'
 			syncAmbienceFromRoom(hydratedRoom)
@@ -2613,6 +2683,12 @@ async function addQuestion() {
 	if (!text) return ElMessage.warning('请输入问题')
 	if (text.length > 500) return ElMessage.warning('问题不能超过 500 个字符')
 	if (sendingQuestion.value) return
+	const pendingQuestion = createPendingQuestion(text)
+	upsertQuestion(pendingQuestion)
+	questionText.value = ''
+	if (isMobile.value) mobileAskExpanded.value = true
+	await nextTick()
+	questionInputRef.value?.focus?.()
 	sendingQuestion.value = true
 	try {
 		const question = await request<Question>(
@@ -2622,12 +2698,9 @@ async function addQuestion() {
 				body: JSON.stringify({ text }),
 			},
 		)
-		questionText.value = ''
-		upsertQuestion(question)
-		if (isMobile.value) mobileAskExpanded.value = true
-		await nextTick()
-		questionInputRef.value?.focus?.()
+		replacePendingQuestion(pendingQuestion.id, question)
 	} catch (error) {
+		markPendingQuestionFailed(pendingQuestion.id)
 		ElMessage.error(error instanceof Error ? error.message : '发送失败')
 	} finally {
 		sendingQuestion.value = false
@@ -3300,7 +3373,11 @@ function formatTime(time: string) {
 							" />
 						<article v-for="question in visibleQuestions" :key="question.id" :data-question-id="question.id" :class="[
 							'question-item',
-							{ selected: selectedQuestionId === question.id },
+							{
+								selected: selectedQuestionId === question.id,
+								pending: question.clientStatus === 'sending',
+								failed: question.clientStatus === 'failed',
+							},
 						]" @click="
 							selectedQuestionId =
 							selectedQuestionId === question.id ? '' : question.id
@@ -3314,6 +3391,8 @@ function formatTime(time: string) {
 										class="host-author-tag" style="background: #ff7f50; border: none" effect="dark" round>
 										<span style="color: white">主持人</span></el-tag>
 									<time>{{ formatTime(question.createdAt) }}</time>
+									<el-tag v-if="question.clientStatus === 'sending'" type="info" effect="plain" round>发送中</el-tag>
+									<el-tag v-else-if="question.clientStatus === 'failed'" type="danger" effect="plain" round>发送失败</el-tag>
 								</div>
 								<p v-html="highlightQuestionText(question.text)" />
 								<div v-if="
@@ -3338,11 +3417,11 @@ function formatTime(time: string) {
 										round>{{ verdictLabels[question.verdict] }}</el-tag><span v-if="!question.verdict"
 										class="waiting">等待主持人</span>
 								</div>
-								<el-button v-if="canHost" size="small" text>{{
+								<el-button v-if="canHost && !question.clientStatus" size="small" text>{{
 									selectedQuestionId === question.id ? '收起操作' : '主持操作'
 								}}</el-button>
 							</div>
-							<div v-if="canHost && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
+							<div v-if="canHost && !question.clientStatus && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
 								<div class="host-action-heading">
 									<strong>主持人操作</strong>
 									<small>判定回答、标记线索，并记录本轮积分依据</small>
@@ -3958,9 +4037,13 @@ function formatTime(time: string) {
 											: '还没有问题，开汤吧。'
 											" />
 										<article v-for="question in visibleQuestions" :key="question.id" :data-question-id="question.id"
-											:class="[
+										:class="[
 												'question-item',
-												{ selected: selectedQuestionId === question.id },
+												{
+													selected: selectedQuestionId === question.id,
+													pending: question.clientStatus === 'sending',
+													failed: question.clientStatus === 'failed',
+												},
 											]" @click="
 												selectedQuestionId =
 												selectedQuestionId === question.id ? '' : question.id
@@ -3975,6 +4058,8 @@ function formatTime(time: string) {
 														style="background: #ff7f50; border: none" effect="dark" round>
 														<span style="color: white">主持人</span></el-tag>
 													<time>{{ formatTime(question.createdAt) }}</time>
+													<el-tag v-if="question.clientStatus === 'sending'" type="info" effect="plain" round>发送中</el-tag>
+													<el-tag v-else-if="question.clientStatus === 'failed'" type="danger" effect="plain" round>发送失败</el-tag>
 												</div>
 												<p v-html="highlightQuestionText(question.text)" />
 												<div v-if="
@@ -4000,11 +4085,11 @@ function formatTime(time: string) {
 														round>{{ verdictLabels[question.verdict] }}</el-tag><span v-if="!question.verdict"
 														class="waiting">等待主持人</span>
 												</div>
-												<el-button v-if="canHost" size="small" text>{{
+												<el-button v-if="canHost && !question.clientStatus" size="small" text>{{
 													selectedQuestionId === question.id ? '收起操作' : '主持操作'
 												}}</el-button>
 											</div>
-											<div v-if="canHost && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
+											<div v-if="canHost && !question.clientStatus && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
 												<div class="host-action-heading">
 													<strong>主持人操作</strong>
 													<small>判定回答、标记线索，并记录本轮积分依据</small>
