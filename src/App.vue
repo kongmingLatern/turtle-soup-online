@@ -196,7 +196,6 @@ interface RoomState {
 	ratingMap?: Record<string, number> | null
 	host: AuthUser
 	questions: Question[]
-	avatarCache?: Record<string, string>
 	updatedAt: string
 }
 
@@ -287,7 +286,6 @@ interface MvpResult {
 
 interface QuestionMutationResponse {
 	question: Question
-	avatarCache?: Record<string, string>
 }
 
 interface QuestionRemoveResponse {
@@ -299,6 +297,7 @@ type QuestionDeleteResponse = QuestionRemoveResponse | RoomState
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://124.222.187.70:3001'
 const STORAGE_TOKEN = 'turtle-soup:token'
+const STORAGE_AVATAR_CACHE = 'turtle-soup:avatar-cache'
 const STORAGE_THEME = 'turtle-soup:theme'
 const STORAGE_AMBIENCE_PREFIX = 'turtle-soup:ambience:'
 const STORAGE_USE_HOST_BACKGROUND_PREFIX = 'turtle-soup:host-background:'
@@ -528,6 +527,7 @@ const roomCodeInput = ref(getInitialRoomCode())
 const room = ref<RoomState | null>(null)
 const questionText = ref('')
 const questionInputRef = ref()
+const timelineRef = ref<HTMLElement | null>(null)
 const questionViewMode = ref<QuestionFilter>('all')
 const questionSearchText = ref('')
 const selectedQuestionId = ref('')
@@ -667,7 +667,7 @@ let ambienceDirty = false
 const presenceNotifyAt = new Map<string, number>()
 const roomAmbienceCache = new Map<string, RoomAmbience>()
 const questionSortTimes = new Map<string, number>()
-const avatarCache = new Map<string, string>()
+const avatarCache = loadAvatarCache()
 const removedQuestionIds = new Set<string>()
 
 const canHost = computed(() =>
@@ -768,6 +768,7 @@ const visibleQuestions = computed(() => {
 		getQuestionSearchText(question).includes(normalizedQuestionSearch.value),
 	)
 })
+const chatQuestions = computed(() => [...visibleQuestions.value].reverse())
 const questionResultHint = computed(() => {
 	if (!room.value) return '进入房间后会在这里同步全部问答。'
 	const total = sortedQuestions.value.length
@@ -1046,6 +1047,17 @@ watch(
 	{ immediate: true },
 )
 
+watch(
+	() => chatQuestions.value.map(question => `${question.id}:${question.verdict ?? ''}`).join('|'),
+	() => {
+		nextTick(() => {
+			const timeline = timelineRef.value
+			if (timeline) timeline.scrollTop = timeline.scrollHeight
+		})
+	},
+	{ flush: 'post' },
+)
+
 watch(canHost, value => {
 	selectedRole.value = value ? 'host' : 'player'
 	if (!value && activePanel.value !== 'canvas') {
@@ -1179,14 +1191,35 @@ function isQuestionMutationResponse(
 	return isRecord(value) && isRecord(value.question)
 }
 
-function rememberAvatar(userId?: string, avatarDataUrl?: string) {
-	if (userId && avatarDataUrl) avatarCache.set(userId, avatarDataUrl)
+function loadAvatarCache() {
+	try {
+		const cache = JSON.parse(localStorage.getItem(STORAGE_AVATAR_CACHE) || '{}')
+		if (!isRecord(cache)) return new Map<string, string>()
+		return new Map(
+			Object.entries(cache).filter(
+				(entry): entry is [string, string] => typeof entry[1] === 'string',
+			),
+		)
+	} catch {
+		return new Map<string, string>()
+	}
 }
 
-function rememberAvatarCache(cache?: Record<string, string> | null) {
-	Object.entries(cache ?? {}).forEach(([userId, avatarDataUrl]) => {
-		rememberAvatar(userId, avatarDataUrl)
-	})
+function persistAvatarCache() {
+	try {
+		localStorage.setItem(
+			STORAGE_AVATAR_CACHE,
+			JSON.stringify(Object.fromEntries(avatarCache)),
+		)
+	} catch {
+		// Ignore storage quota/private-mode failures; avatars can fall back to initials.
+	}
+}
+
+function rememberAvatar(userId?: string, avatarDataUrl?: string) {
+	if (!userId || !avatarDataUrl) return
+	avatarCache.set(userId, avatarDataUrl)
+	persistAvatarCache()
 }
 
 function hydrateUserAvatar<T extends { id: string; avatarDataUrl?: string }>(
@@ -1199,7 +1232,6 @@ function hydrateUserAvatar<T extends { id: string; avatarDataUrl?: string }>(
 }
 
 function hydrateRoomMember(member: RoomMember): RoomMember {
-	rememberAvatar(member.userId, member.avatarDataUrl)
 	const avatarDataUrl = member.avatarDataUrl || avatarCache.get(member.userId) || ''
 	if (avatarDataUrl === member.avatarDataUrl) return member
 	return { ...member, avatarDataUrl }
@@ -1212,11 +1244,49 @@ function hydrateQuestion(question: Question): Question {
 	}
 }
 
+function hydrateMvpResult(result?: MvpResult | null): MvpResult | null {
+	if (!result) return null
+	return {
+		...result,
+		user: hydrateUserAvatar(result.user),
+		importantQuestions: result.importantQuestions.map(question => ({
+			...question,
+			author: hydrateUserAvatar(question.author),
+		})),
+	}
+}
+
+function hydrateSettlement(nextSettlement?: Settlement | null): Settlement | null {
+	if (!nextSettlement) return null
+	return {
+		...nextSettlement,
+		entries: nextSettlement.entries.map(entry => ({
+			...entry,
+			user: hydrateUserAvatar(entry.user),
+		})),
+	}
+}
+
+function hydrateSoupHistoryItem(item: SoupHistoryItem): SoupHistoryItem {
+	return {
+		...item,
+		host: item.host ? hydrateUserAvatar(item.host) : item.host,
+		mvp:
+			item.mvp && 'importantQuestions' in item.mvp
+				? hydrateMvpResult(item.mvp)
+				: item.mvp
+					? hydrateUserAvatar(item.mvp)
+					: item.mvp,
+	}
+}
+
 function hydrateRoom(data: RoomState): RoomState {
-	rememberAvatarCache(data.avatarCache)
 	return {
 		...data,
 		host: hydrateUserAvatar(data.host),
+		settlement: hydrateSettlement(data.settlement) ?? undefined,
+		mvp: hydrateMvpResult(data.mvp),
+		soupHistory: data.soupHistory?.map(hydrateSoupHistoryItem) ?? data.soupHistory,
 		questions: data.questions
 			.map(hydrateQuestion)
 			.filter(question => !removedQuestionIds.has(question.id)),
@@ -1243,7 +1313,6 @@ function applyQuestionPatchResponse(response: QuestionPatchResponse) {
 		return
 	}
 	if (isQuestionMutationResponse(response)) {
-		rememberAvatarCache(response.avatarCache)
 		upsertQuestion(response.question)
 		return
 	}
@@ -1543,7 +1612,7 @@ async function joinRoom(code = roomCodeInput.value, showMessage = true) {
 function applyRoom(data: RoomState) {
 	const nextRoom = hydrateRoom(data)
 	room.value = nextRoom
-	mvpResult.value = nextRoom.mvp ?? null
+	mvpResult.value = hydrateMvpResult(nextRoom.mvp)
 	roomCodeInput.value = nextRoom.code
 	useHostBackground.value =
 		localStorage.getItem(STORAGE_USE_HOST_BACKGROUND_PREFIX + nextRoom.code) !==
@@ -2434,8 +2503,8 @@ function connectSocket(code: string) {
 			selectedRole.value = canHost.value ? 'host' : 'player'
 			syncAmbienceFromRoom(hydratedRoom)
 			syncSelectedSoupFromRoom(hydratedRoom)
-			if (hydratedRoom.settlement) settlement.value = hydratedRoom.settlement
-			if (hydratedRoom.mvp) mvpResult.value = hydratedRoom.mvp
+			if (hydratedRoom.settlement) settlement.value = hydrateSettlement(hydratedRoom.settlement)
+			if (hydratedRoom.mvp) mvpResult.value = hydrateMvpResult(hydratedRoom.mvp)
 			nextTick(() => restoreCanvas())
 		})
 		socket.on(
@@ -2487,17 +2556,19 @@ function connectSocket(code: string) {
 			},
 		)
 		socket.on('room-revealed', (nextSettlement: Settlement) => {
-			settlement.value = nextSettlement
+			const hydratedSettlement = hydrateSettlement(nextSettlement)
+			settlement.value = hydratedSettlement
 			settlementDialogOpen.value = true
 			if (room.value) {
 				room.value.revealed = true
 				room.value.solved = true
-				room.value.settlement = nextSettlement
+				room.value.settlement = hydratedSettlement ?? undefined
 			}
 		})
 		socket.on('room-mvp-selected', (nextMvp: MvpResult) => {
-			mvpResult.value = nextMvp
-			if (room.value) room.value.mvp = nextMvp
+			const hydratedMvp = hydrateMvpResult(nextMvp)
+			mvpResult.value = hydratedMvp
+			if (room.value) room.value.mvp = hydratedMvp
 			mvpSelectDialogOpen.value = false
 			mvpResultDialogOpen.value = true
 		})
@@ -2506,10 +2577,8 @@ function connectSocket(code: string) {
 			(event: {
 				roomCode: string
 				question: Question
-				avatarCache?: Record<string, string>
 			}) => {
 				if (event.roomCode !== room.value?.code) return
-				rememberAvatarCache(event.avatarCache)
 				upsertQuestion(event.question)
 			},
 		)
@@ -2518,10 +2587,8 @@ function connectSocket(code: string) {
 			(event: {
 				roomCode: string
 				question: Question
-				avatarCache?: Record<string, string>
 			}) => {
 				if (event.roomCode !== room.value?.code) return
-				rememberAvatarCache(event.avatarCache)
 				upsertQuestion(event.question)
 			},
 		)
@@ -2567,7 +2634,6 @@ function joinSocketRoom(code: string) {
 				id: user.value.id,
 				username: user.value.username,
 				displayName: user.value.displayName,
-				avatarDataUrl: user.value.avatarDataUrl,
 				points: user.value.points,
 				rankTitle: user.value.rankTitle,
 			}
@@ -2691,13 +2757,18 @@ async function addQuestion() {
 	questionInputRef.value?.focus?.()
 	sendingQuestion.value = true
 	try {
-		const question = await request<Question>(
+		const response = await request<Question | QuestionMutationResponse>(
 			`/rooms/${room.value.code}/questions`,
 			{
 				method: 'POST',
 				body: JSON.stringify({ text }),
 			},
 		)
+		if (isQuestionMutationResponse(response)) {
+			replacePendingQuestion(pendingQuestion.id, response.question)
+			return
+		}
+		const question = response
 		replacePendingQuestion(pendingQuestion.id, question)
 	} catch (error) {
 		markPendingQuestionFailed(pendingQuestion.id)
@@ -2814,12 +2885,12 @@ function openToolDock(panel: 'host' | 'player' | 'answer' | 'canvas') {
 
 async function revealAnswer() {
 	if (!canHost.value || !room.value) return
-	settlement.value = await request<Settlement>(
+	settlement.value = hydrateSettlement(await request<Settlement>(
 		`/rooms/${room.value.code}/reveal`,
 		{
 			method: 'POST',
 		},
-	)
+	))
 	settlementDialogOpen.value = true
 	await joinRoom(room.value.code, false)
 }
@@ -2846,8 +2917,9 @@ async function submitMvpSelection() {
 			method: 'POST',
 			body: JSON.stringify({ userId: selectedMvpUserId.value }),
 		})
-		mvpResult.value = data
-		room.value.mvp = data
+		const hydratedMvp = hydrateMvpResult(data)
+		mvpResult.value = hydratedMvp
+		room.value.mvp = hydratedMvp
 		mvpSelectDialogOpen.value = false
 		mvpResultDialogOpen.value = true
 		ElMessage.success('本轮 MVP 已公布')
@@ -2874,12 +2946,12 @@ async function rateCurrentSoup(rating: number) {
 
 async function uploadAvatar(file: File) {
 	const dataUrl = await fileToDataUrl(file)
-	user.value = hydrateUserAvatar(
-		await request<AuthUser>('/auth/me', {
-			method: 'PATCH',
-			body: JSON.stringify({ avatarDataUrl: dataUrl }),
-		}),
-	)
+	const updatedUser = await request<AuthUser>('/auth/me', {
+		method: 'PATCH',
+		body: JSON.stringify({ avatarDataUrl: dataUrl }),
+	})
+	rememberAvatar(updatedUser.id, dataUrl)
+	user.value = hydrateUserAvatar({ ...updatedUser, avatarDataUrl: dataUrl })
 	if (room.value) {
 		joinSocketRoom(room.value.code)
 		await joinRoom(room.value.code, false)
@@ -3165,16 +3237,26 @@ function formatTime(time: string) {
 				@ended="musicPlaying = false" />
 			<header class="app-header">
 				<div class="brand-block">
-					<p class="eyebrow">Turtle Soup Online</p>
-					<h1>海龟汤在线联机</h1>
+					<p class="eyebrow">{{ room ? `房间 ${room.code} · 海龟谜题` : 'Turtle Soup Online' }}</p>
+					<h1>海龟汤推理馆</h1>
 				</div>
 				<div class="header-actions">
+					<div v-if="room" class="header-members">
+						<button v-for="member in memberStats.slice(0, 6)" :key="member.userId"
+							:class="['strip-member', { offline: !member.online }]" type="button" @click="openMemberImportant(member)">
+							<el-avatar :size="30" :src="member.avatarDataUrl">{{
+								member.displayName.slice(0, 1)
+							}}</el-avatar><span>{{ member.displayName }}</span>
+						</button>
+					</div>
+					<span v-if="room" class="online-count">{{memberStats.filter(member => member.online).length}} 人在线</span>
 					<el-button :icon="Share" :disabled="!room" @click="copyShareUrl">邀请</el-button>
 					<el-button :icon="isDark ? Sunny : Moon" circle @click="isDark = !isDark" />
+					<el-button v-if="user" text type="danger" @click="logout()">退出</el-button>
 				</div>
 			</header>
 
-			<section class="user-strip surface-card">
+			<section v-if="!room || !user" class="user-strip surface-card">
 				<div v-if="user" class="current-user">
 					<el-upload :show-file-list="false" :before-upload="beforeAvatarUpload" accept="image/*">
 						<el-avatar :size="46" :src="user.avatarDataUrl">{{
@@ -3185,7 +3267,6 @@ function formatTime(time: string) {
 						<strong>{{ user.displayName }}</strong><span>@{{ user.username }} · {{ user.rankTitle }} ·
 							{{ user.points }} 分</span>
 					</div>
-					<el-button text type="danger" @click="logout()">退出</el-button>
 				</div>
 				<el-form v-else ref="authFormRef" :model="authForm" :rules="authRules" class="auth-inline" inline
 					@submit.prevent>
@@ -3216,14 +3297,6 @@ function formatTime(time: string) {
 						<b>{{memberStats.filter(member => member.online).length}}</b><span>在线</span>
 					</div>
 				</div>
-				<div class="member-strip">
-					<button v-for="member in memberStats.slice(0, 8)" :key="member.userId"
-						:class="['strip-member', { offline: !member.online }]" type="button" @click="openMemberImportant(member)">
-						<el-avatar :size="30" :src="member.avatarDataUrl">{{
-							member.displayName.slice(0, 1)
-						}}</el-avatar><span>{{ member.displayName }}</span>
-					</button>
-				</div>
 			</section>
 
 			<section class="desk-grid">
@@ -3249,7 +3322,8 @@ function formatTime(time: string) {
 						)
 							" />
 					</section>
-					<section v-if="hostImportantHints.length" class="surface-card host-hint-card">
+
+	<section v-if="hostImportantHints.length" class="surface-card host-hint-card">
 						<div class="host-hint-row">
 							<strong>主持人提示</strong>
 							<ol class="host-hint-list">
@@ -3259,66 +3333,35 @@ function formatTime(time: string) {
 							</ol>
 						</div>
 					</section>
-					<section class="surface-card config-card">
+
+					<section class="surface-card clue-card">
 						<div class="section-head compact">
 							<div class="title-with-icon">
-								<House /><strong>房间配置</strong>
+								<Flag /><strong>关键线索</strong>
 							</div>
+							<span class="subtle">{{ importantQuestions.length }}/{{ sortedQuestions.length }} 已提示</span>
 						</div>
-						<div class="config-stack">
-							<label>选择汤面</label><el-select v-model="selectedSoupId" filterable placeholder="选择自己的汤面"
-								:disabled="!user || !soups.length"><el-option v-for="soup in soups" :key="soup.id" :label="soup.title"
-									:value="soup.id"><span>{{ soup.title }}</span><small>我的汤面 ·
-										{{ difficultyLabels[soup.difficulty] }}</small></el-option></el-select>
-							<el-empty v-if="user && !soups.length" description="还没有自己的汤面" :image-size="54" />
-							<!-- <div v-if="selectedSoupSummary" class="soup-current">
-								<div>
-									<strong>{{ selectedSoupSummary.title }}</strong
-									><span
-										>{{ selectedSoupSummary.category || '自建' }} ·
-										{{ difficultyLabels[selectedSoupSummary.difficulty] }}</span
-									>
+						<el-empty v-if="!importantQuestions.length" description="主持人还没有标记重要内容" />
+						<div v-else class="clue-list clue-card-grid">
+							<article v-for="question in importantQuestions" :key="question.id" class="clue-item">
+								<div class="clue-card-top">
+									<el-avatar :size="24" :src="question.author.avatarDataUrl"
+										class="clue-avatar">{{ question.author.displayName.slice(0, 1) }}</el-avatar>
+									<div class="clue-card-author">
+										<strong>{{ question.author.displayName }}</strong><time>{{ formatTime(question.createdAt) }}</time>
+									</div>
 								</div>
-								<p>{{ selectedSoupSummary.surface }}</p>
-								<el-button text type="primary" @click="soupManagerOpen = true"
-									>管理汤面</el-button
-								>
-							</div> -->
-							<p v-if="room && canHost && isSelectedCurrentSoup" class="switch-warning">
-								请先选择新的汤面
-							</p>
-							<p v-else-if="room && canHost" class="switch-warning">
-								切换后会清空当前房间的问答、重要线索、画板和结算记录。
-							</p>
-							<div class="config-actions">
-								<el-button :icon="Plus" :disabled="!user" @click="openCreateSoupDialog">自建汤面</el-button><el-dropdown
-									trigger="click" :disabled="!user" @command="handleRoomActionCommand">
-									<el-button type="primary" :icon="Plus" :disabled="!user">创建房间</el-button>
-									<template #dropdown>
-										<el-dropdown-menu>
-											<el-dropdown-item command="create" :disabled="!selectedSoupId">
-												创建新房间
-											</el-dropdown-item>
-											<el-dropdown-item command="switch" :disabled="!room ||
-												!canHost ||
-												!selectedSoupId ||
-												isSelectedCurrentSoup
-												">
-												切换当前题目
-											</el-dropdown-item>
-										</el-dropdown-menu>
-									</template>
-								</el-dropdown>
-								<el-button type="info" @click="soupManagerOpen = true">管理汤面</el-button>
-							</div>
-							<label>加入房间</label>
-							<div class="room-row">
-								<el-input v-model="roomCodeInput" placeholder="输入房间号" @keyup.enter="joinRoom()" /><el-button
-									:icon="Right" @click="joinRoom()" />
-							</div>
-							<el-button text :icon="CopyDocument" :disabled="!room" @click="copyShareUrl">复制邀请链接</el-button>
+								<p class="clue-card-text">{{ question.text }}</p>
+								<div class="public-score-tags compact">
+									<el-tag v-for="tag in questionSignalTags(question)" :key="tag.key" :type="tag.type"
+										:effect="tag.effect" round>{{ tag.label }}</el-tag>
+								</div>
+								<el-tag v-if="question.verdict" class="clue-verdict-tag" :class="question.verdict" effect="plain"
+									round>{{ verdictLabels[question.verdict] }}</el-tag>
+							</article>
 						</div>
 					</section>
+				
 				</aside>
 
 				<section class="surface-card qa-column">
@@ -3366,180 +3409,124 @@ function formatTime(time: string) {
 							:disabled="!user || !room" @keyup.enter="addQuestion" /><el-button type="primary" size="large"
 							:icon="Right" :loading="sendingQuestion" :disabled="!user || !room" @click="addQuestion">发送</el-button>
 					</div>
-					<div class="timeline">
+					<div ref="timelineRef" class="timeline">
 						<el-empty v-if="!visibleQuestions.length" :description="sortedQuestions.length
 							? '没有匹配的问答，换个筛选或关键词试试。'
 							: '还没有问题，开汤吧。'
 							" />
-						<article v-for="question in visibleQuestions" :key="question.id" :data-question-id="question.id" :class="[
-							'question-item',
-							{
-								selected: selectedQuestionId === question.id,
-								pending: question.clientStatus === 'sending',
-								failed: question.clientStatus === 'failed',
-							},
+							<article v-for="question in chatQuestions" :key="question.id" :data-question-id="question.id" :class="[
+								'question-item',
+								{
+									mine: question.author.id === user?.id,
+									selected: selectedQuestionId === question.id,
+									pending: question.clientStatus === 'sending',
+									failed: question.clientStatus === 'failed',
+								},
 						]" @click="
-							selectedQuestionId =
-							selectedQuestionId === question.id ? '' : question.id
-							">
-							<div class="question-main">
-								<div class="question-meta">
-									<el-avatar :size="24" :src="question.author.avatarDataUrl">{{
-										question.author.displayName.slice(0, 1)
-									}}</el-avatar>
-									<span>{{ question.author.displayName }}</span><el-tag v-if="question.author.id === room?.host.id"
-										class="host-author-tag" style="background: #ff7f50; border: none" effect="dark" round>
-										<span style="color: white">主持人</span></el-tag>
-									<time>{{ formatTime(question.createdAt) }}</time>
-									<el-tag v-if="question.clientStatus === 'sending'" type="info" effect="plain" round>发送中</el-tag>
-									<el-tag v-else-if="question.clientStatus === 'failed'" type="danger" effect="plain" round>发送失败</el-tag>
+								selectedQuestionId =
+								selectedQuestionId === question.id ? '' : question.id
+								">
+								<el-avatar :size="36" :src="question.author.avatarDataUrl" class="question-avatar">{{
+									question.author.displayName.slice(0, 1)
+								}}</el-avatar>
+								<div class="question-bubble-wrap">
+									<div class="question-meta">
+										<span>{{ question.author.displayName }}</span>
+										<el-tag v-if="question.author.id === room?.host.id" class="host-author-tag" effect="dark" round>
+											主持人</el-tag>
+										<time>{{ formatTime(question.createdAt) }}</time>
+										<el-tag v-if="question.clientStatus === 'sending'" type="info" effect="plain" round>发送中</el-tag>
+										<el-tag v-else-if="question.clientStatus === 'failed'" type="danger" effect="plain" round>发送失败</el-tag>
+									</div>
+									<div class="question-bubble">
+										<p v-html="highlightQuestionText(question.text)" />
+										<div v-if="
+											question.quality !== 'none' ||
+											question.truthGuess !== 'none' ||
+											question.firstCoreClue ||
+											question.firstMainLogic ||
+											question.firstFullSolve
+										" class="public-score-tags">
+											<el-tag v-if="question.quality !== 'none'" type="success" effect="plain"
+												round>{{ qualityLabels[question.quality] }}</el-tag><el-tag v-if="question.truthGuess !== 'none'"
+												type="warning" effect="plain" round>{{ truthGuessLabels[question.truthGuess] }}</el-tag><el-tag
+												v-if="question.firstCoreClue" type="success" effect="dark" round>首次核心线索</el-tag><el-tag
+												v-if="question.firstMainLogic" type="warning" effect="dark" round>首次主要逻辑</el-tag><el-tag
+												v-if="question.firstFullSolve" type="danger" effect="dark" round>首位完整破解</el-tag>
+										</div>
+									</div>
+									<div class="verdict-zone">
+										<span :class="['host-response', question.verdict || 'waiting']">
+											汤主回应：{{ question.verdict ? verdictLabels[question.verdict] : '待回应' }}
+										</span>
+										<span v-if="question.important" class="important-chip">关键</span>
+										<button v-if="canHost && !question.clientStatus" class="host-operate-button" type="button" @click.stop="
+											selectedQuestionId =
+											selectedQuestionId === question.id ? '' : question.id
+											">{{
+											selectedQuestionId === question.id ? '收起操作' : '主持操作'
+										}}</button>
+									</div>
+									<div v-if="canHost && !question.clientStatus && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
+										<div class="host-action-heading">
+											<strong>主持人操作</strong>
+											<small>判定回答、标记线索，并记录本轮积分依据</small>
+										</div>
+										<div class="action-group">
+											<span class="action-title">判定</span><button class="judge yes" type="button"
+												@click="setVerdict(question.id, 'yes')">
+												是</button><button class="judge no" type="button" @click="setVerdict(question.id, 'no')">
+												不是</button><button class="judge both" type="button" @click="setVerdict(question.id, 'both')">
+												是也不是</button><button class="judge mute" type="button"
+												@click="setVerdict(question.id, 'irrelevant')">
+												不重要
+											</button>
+										</div>
+										<div class="action-group">
+											<span class="action-title">标记</span><button :class="['judge', 'flag', { active: question.important }]"
+												type="button" @click="toggleImportant(question)">
+												{{ question.important ? '已标重要' : '标为重要' }}</button><button class="judge delete" type="button"
+												@click="removeQuestion(question.id)">
+												删除
+											</button>
+										</div>
+										<div class="score-grid">
+											<label>问题价值<el-select :model-value="question.quality" size="small" @change="
+												(value: QuestionQuality) =>
+													updateQuestionScoring(question, { quality: value })
+											"><el-option v-for="(label, value) in qualityLabels" :key="value" :label="label"
+														:value="value" /></el-select></label><label>猜中程度<el-select :model-value="question.truthGuess"
+													size="small" @change="
+														(value: TruthGuess) =>
+															updateQuestionScoring(question, { truthGuess: value })
+													"><el-option v-for="(label, value) in truthGuessLabels" :key="value" :label="label"
+														:value="value" /></el-select></label>
+										</div>
+										<div class="achievement-row">
+											<el-checkbox :model-value="question.firstCoreClue" @change="
+												(value: boolean) =>
+													updateQuestionScoring(question, {
+														firstCoreClue: value,
+													})
+											">首次核心线索</el-checkbox><el-checkbox :model-value="question.firstMainLogic" @change="
+												(value: boolean) =>
+													updateQuestionScoring(question, {
+														firstMainLogic: value,
+													})
+											">首次主要逻辑</el-checkbox><el-checkbox :model-value="question.firstFullSolve" @change="
+												(value: boolean) =>
+													updateQuestionScoring(question, {
+														firstFullSolve: value,
+													})
+											">首位完整破解</el-checkbox>
+										</div>
+									</div>
 								</div>
-								<p v-html="highlightQuestionText(question.text)" />
-								<div v-if="
-									question.quality !== 'none' ||
-									question.truthGuess !== 'none' ||
-									question.firstCoreClue ||
-									question.firstMainLogic ||
-									question.firstFullSolve
-								" class="public-score-tags">
-									<el-tag v-if="question.quality !== 'none'" type="success" effect="plain"
-										round>{{ qualityLabels[question.quality] }}</el-tag><el-tag v-if="question.truthGuess !== 'none'"
-										type="warning" effect="plain" round>{{ truthGuessLabels[question.truthGuess] }}</el-tag><el-tag
-										v-if="question.firstCoreClue" type="success" effect="dark" round>首次核心线索</el-tag><el-tag
-										v-if="question.firstMainLogic" type="warning" effect="dark" round>首次主要逻辑</el-tag><el-tag
-										v-if="question.firstFullSolve" type="danger" effect="dark" round>首位完整破解</el-tag>
-								</div>
-							</div>
-							<div class="verdict-zone">
-								<div class="tag-line">
-									<el-tag v-if="question.important" type="warning" effect="dark" round>重要</el-tag><el-tag
-										v-if="question.verdict" :type="verdictTypes[question.verdict]" effect="dark"
-										round>{{ verdictLabels[question.verdict] }}</el-tag><span v-if="!question.verdict"
-										class="waiting">等待主持人</span>
-								</div>
-								<el-button v-if="canHost && !question.clientStatus" size="small" text>{{
-									selectedQuestionId === question.id ? '收起操作' : '主持操作'
-								}}</el-button>
-							</div>
-							<div v-if="canHost && !question.clientStatus && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
-								<div class="host-action-heading">
-									<strong>主持人操作</strong>
-									<small>判定回答、标记线索，并记录本轮积分依据</small>
-								</div>
-								<div class="action-group">
-									<span class="action-title">判定</span><button class="judge yes" type="button"
-										@click="setVerdict(question.id, 'yes')">
-										是</button><button class="judge no" type="button" @click="setVerdict(question.id, 'no')">
-										不是</button><button class="judge both" type="button" @click="setVerdict(question.id, 'both')">
-										是也不是</button><button class="judge mute" type="button"
-										@click="setVerdict(question.id, 'irrelevant')">
-										不重要
-									</button>
-								</div>
-								<div class="action-group">
-									<span class="action-title">标记</span><button :class="['judge', 'flag', { active: question.important }]"
-										type="button" @click="toggleImportant(question)">
-										{{ question.important ? '已标重要' : '标为重要' }}</button><button class="judge delete" type="button"
-										@click="removeQuestion(question.id)">
-										删除
-									</button>
-								</div>
-								<div class="score-grid">
-									<label>问题价值<el-select :model-value="question.quality" size="small" @change="
-										(value: QuestionQuality) =>
-											updateQuestionScoring(question, { quality: value })
-									"><el-option v-for="(label, value) in qualityLabels" :key="value" :label="label"
-												:value="value" /></el-select></label><label>猜中程度<el-select :model-value="question.truthGuess"
-											size="small" @change="
-												(value: TruthGuess) =>
-													updateQuestionScoring(question, { truthGuess: value })
-											"><el-option v-for="(label, value) in truthGuessLabels" :key="value" :label="label"
-												:value="value" /></el-select></label>
-								</div>
-								<div class="achievement-row">
-									<el-checkbox :model-value="question.firstCoreClue" @change="
-										(value: boolean) =>
-											updateQuestionScoring(question, {
-												firstCoreClue: value,
-											})
-									">首次核心线索</el-checkbox><el-checkbox :model-value="question.firstMainLogic" @change="
-										(value: boolean) =>
-											updateQuestionScoring(question, {
-												firstMainLogic: value,
-											})
-									">首次主要逻辑</el-checkbox><el-checkbox :model-value="question.firstFullSolve" @change="
-										(value: boolean) =>
-											updateQuestionScoring(question, {
-												firstFullSolve: value,
-											})
-									">首位完整破解</el-checkbox>
-								</div>
-							</div>
 						</article>
 					</div>
 				</section>
 
 				<aside class="control-column">
-					<section class="surface-card clue-card">
-						<div class="section-head compact">
-							<div class="title-with-icon">
-								<Flag /><strong>重要线索</strong>
-							</div>
-							<el-tag round effect="dark" type="warning">{{
-								importantQuestions.length
-							}}</el-tag>
-						</div>
-						<el-empty v-if="!importantQuestions.length" description="主持人还没有标记重要内容" />
-						<div v-else class="clue-list clue-card-grid">
-							<article v-for="question in importantQuestions" :key="question.id" class="clue-item">
-								<div class="clue-card-top">
-									<el-avatar :size="24" :src="question.author.avatarDataUrl"
-										class="clue-avatar">{{ question.author.displayName.slice(0, 1) }}</el-avatar>
-									<div class="clue-card-author">
-										<strong>{{ question.author.displayName }}</strong><time>{{ formatTime(question.createdAt) }}</time>
-									</div>
-								</div>
-								<p class="clue-card-text">{{ question.text }}</p>
-								<div class="public-score-tags compact">
-									<el-tag v-for="tag in questionSignalTags(question)" :key="tag.key" :type="tag.type"
-										:effect="tag.effect" round>{{ tag.label }}</el-tag>
-								</div>
-								<el-tag v-if="question.verdict" class="clue-verdict-tag" :class="question.verdict" effect="plain"
-									round>{{ verdictLabels[question.verdict] }}</el-tag>
-							</article>
-						</div>
-					</section>
-					<section class="surface-card members-card">
-						<div class="section-head compact">
-							<div class="title-with-icon">
-								<User /><strong>房间用户({{ memberStats.length || 0 }})</strong>
-							</div>
-						</div>
-						<el-empty v-if="!memberStats.length" description="暂无用户" :image-size="58" />
-						<div v-else class="member-list">
-							<div v-for="member in memberStats" :key="member.userId"
-								:class="['member-row', { offline: !member.online }]" role="button" tabindex="0"
-								@click="openMemberImportant(member)" @keyup.enter="openMemberImportant(member)">
-								<el-avatar :size="34" :src="member.avatarDataUrl">{{
-									member.displayName.slice(0, 1)
-								}}</el-avatar><span class="member-name">{{ member.displayName
-								}}<span class="member-badges"><em v-if="room?.host.id === member.userId">主持人</em><i
-											:class="member.online ? 'online' : 'offline'">{{
-												member.online ? '在线' : '离线'
-											}}</i></span></span><span class="member-counts"><b>{{ member.questionCount }}</b>问 <b
-										class="important-number">{{ member.importantCount }}</b>重要</span><el-button
-									v-if="canTransferHostTo(member)" size="small" type="primary" plain
-									@click.stop="transferHost(member)">设为主持人</el-button>
-							</div>
-						</div>
-						<div v-if="presenceEvents.length" class="presence-feed">
-							<div v-for="event in presenceEvents" :key="event.at + '-' + event.user.userId"
-								:class="['presence-line', event.type]">
-								<span />
-								<p>{{ event.message }}</p>
-							</div>
-						</div>
-					</section>
 					<section class="surface-card rank-card">
 						<div class="section-head compact">
 							<div class="title-with-icon">
@@ -3552,6 +3539,95 @@ function formatTime(time: string) {
 								<strong>#{{ entry.rank }}</strong><el-avatar :size="30" :src="entry.user.avatarDataUrl">{{
 									entry.user.displayName.slice(0, 1)
 								}}</el-avatar><span>{{ entry.user.displayName }}</span><b>{{ entry.total }}</b>
+							</div>
+						</div>
+					</section>
+					<section class="surface-card config-card">
+						<div class="section-head compact">
+							<div class="title-with-icon">
+								<House /><strong>房间配置</strong>
+							</div>
+							<el-tag v-if="room" round type="success" effect="plain">进行中</el-tag>
+						</div>
+						<div v-if="room" class="room-config-summary">
+							<div><span>房间号</span><strong>{{ room.code }}</strong></div>
+							<div><span>主持人</span><strong>{{ room.host.displayName }}</strong></div>
+							<div><span>人数</span><strong>{{memberStats.filter(member => member.online).length}} / {{ memberStats.length || 0 }} 人</strong></div>
+							<div><span>提问</span><strong>{{ pendingQuestions }} 待判定</strong></div>
+						</div>
+						<div class="config-stack">
+							<label>选择汤面</label><el-select v-model="selectedSoupId" filterable placeholder="选择自己的汤面"
+								:disabled="!user || !soups.length"><el-option v-for="soup in soups" :key="soup.id" :label="soup.title"
+									:value="soup.id"><span>{{ soup.title }}</span><small>我的汤面 ·
+										{{ difficultyLabels[soup.difficulty] }}</small></el-option></el-select>
+							<el-empty v-if="user && !soups.length" description="还没有自己的汤面" :image-size="54" />
+							<p v-if="room && canHost && isSelectedCurrentSoup" class="switch-warning">
+								请先选择新的汤面
+							</p>
+							<p v-else-if="room && canHost" class="switch-warning">
+								切换后会清空当前房间的问答、重要线索、画板和结算记录。
+							</p>
+							<div class="config-actions">
+								<el-button :icon="Plus" :disabled="!user" @click="openCreateSoupDialog">自建汤面</el-button><el-dropdown
+									trigger="click" :disabled="!user" @command="handleRoomActionCommand">
+									<el-button type="primary" :icon="Plus" :disabled="!user">创建房间</el-button>
+									<template #dropdown>
+										<el-dropdown-menu>
+											<el-dropdown-item command="create" :disabled="!selectedSoupId">
+												创建新房间
+											</el-dropdown-item>
+											<el-dropdown-item command="switch" :disabled="!room ||
+												!canHost ||
+												!selectedSoupId ||
+												isSelectedCurrentSoup
+												">
+												切换当前题目
+											</el-dropdown-item>
+										</el-dropdown-menu>
+									</template>
+								</el-dropdown>
+								<el-button type="info" @click="soupManagerOpen = true">管理汤面</el-button>
+							</div>
+							<label>加入房间</label>
+							<div class="room-row">
+								<el-input v-model="roomCodeInput" placeholder="输入房间号" @keyup.enter="joinRoom()" /><el-button
+									:icon="Right" @click="joinRoom()" />
+							</div>
+							<el-button text :icon="CopyDocument" :disabled="!room" @click="copyShareUrl">复制邀请链接</el-button>
+						</div>
+					</section>
+					<section class="surface-card members-card">
+						<div class="section-head compact">
+							<div class="title-with-icon">
+								<User /><strong>房间用户({{ memberStats.length || 0 }})</strong>
+							</div>
+						</div>
+						<el-empty v-if="!memberStats.length" description="暂无用户" :image-size="58" />
+							<div v-else class="member-list">
+								<div v-for="member in memberStats" :key="member.userId"
+									:class="['member-row', { offline: !member.online }]" role="button" tabindex="0"
+									@click="openMemberImportant(member)" @keyup.enter="openMemberImportant(member)">
+									<el-avatar :size="34" :src="member.avatarDataUrl">{{
+										member.displayName.slice(0, 1)
+									}}</el-avatar>
+									<div class="member-main">
+										<strong class="member-name">{{ member.displayName }}</strong>
+										<span class="member-badges"><em v-if="room?.host.id === member.userId">主持人</em><i
+													:class="member.online ? 'online' : 'offline'">{{
+													member.online ? '在线' : '离线'
+												}}</i></span>
+									</div>
+									<span class="member-counts"><b>{{ member.questionCount }}</b>问 <b
+											class="important-number">{{ member.importantCount }}</b>重要</span>
+									<el-button v-if="canTransferHostTo(member)" class="member-transfer-button" size="small" type="primary" plain
+										@click.stop="transferHost(member)">设为主持人</el-button>
+								</div>
+							</div>
+						<div v-if="presenceEvents.length" class="presence-feed">
+							<div v-for="event in presenceEvents" :key="event.at + '-' + event.user.userId"
+								:class="['presence-line', event.type]">
+								<span />
+								<p>{{ event.message }}</p>
 							</div>
 						</div>
 					</section>
@@ -4036,115 +4112,118 @@ function formatTime(time: string) {
 											? '没有匹配的问答，换个筛选或关键词试试。'
 											: '还没有问题，开汤吧。'
 											" />
-										<article v-for="question in visibleQuestions" :key="question.id" :data-question-id="question.id"
-										:class="[
-												'question-item',
-												{
-													selected: selectedQuestionId === question.id,
-													pending: question.clientStatus === 'sending',
-													failed: question.clientStatus === 'failed',
-												},
+											<article v-for="question in chatQuestions" :key="question.id" :data-question-id="question.id"
+											:class="[
+													'question-item',
+													{
+														mine: question.author.id === user?.id,
+														selected: selectedQuestionId === question.id,
+														pending: question.clientStatus === 'sending',
+														failed: question.clientStatus === 'failed',
+													},
 											]" @click="
-												selectedQuestionId =
-												selectedQuestionId === question.id ? '' : question.id
-												">
-											<div class="question-main">
-												<div class="question-meta">
-													<el-avatar :size="24" :src="question.author.avatarDataUrl">{{
-														question.author.displayName.slice(0, 1)
-													}}</el-avatar>
-													<span>{{ question.author.displayName }}</span><el-tag
-														v-if="question.author.id === room?.host.id" class="host-author-tag"
-														style="background: #ff7f50; border: none" effect="dark" round>
-														<span style="color: white">主持人</span></el-tag>
-													<time>{{ formatTime(question.createdAt) }}</time>
-													<el-tag v-if="question.clientStatus === 'sending'" type="info" effect="plain" round>发送中</el-tag>
-													<el-tag v-else-if="question.clientStatus === 'failed'" type="danger" effect="plain" round>发送失败</el-tag>
+													selectedQuestionId =
+													selectedQuestionId === question.id ? '' : question.id
+													">
+												<el-avatar :size="36" :src="question.author.avatarDataUrl" class="question-avatar">{{
+													question.author.displayName.slice(0, 1)
+												}}</el-avatar>
+												<div class="question-bubble-wrap">
+													<div class="question-meta">
+														<span>{{ question.author.displayName }}</span>
+														<el-tag v-if="question.author.id === room?.host.id" class="host-author-tag" effect="dark" round>
+															主持人</el-tag>
+														<time>{{ formatTime(question.createdAt) }}</time>
+														<el-tag v-if="question.clientStatus === 'sending'" type="info" effect="plain" round>发送中</el-tag>
+														<el-tag v-else-if="question.clientStatus === 'failed'" type="danger" effect="plain" round>发送失败</el-tag>
+													</div>
+													<div class="question-bubble">
+														<p v-html="highlightQuestionText(question.text)" />
+														<div v-if="
+															question.quality !== 'none' ||
+															question.truthGuess !== 'none' ||
+															question.firstCoreClue ||
+															question.firstMainLogic ||
+															question.firstFullSolve
+														" class="public-score-tags">
+															<el-tag v-if="question.quality !== 'none'" type="success" effect="plain"
+																round>{{ qualityLabels[question.quality] }}</el-tag><el-tag
+																v-if="question.truthGuess !== 'none'" type="warning" effect="plain"
+																round>{{ truthGuessLabels[question.truthGuess] }}</el-tag><el-tag
+																v-if="question.firstCoreClue" type="success" effect="dark" round>首次核心线索</el-tag><el-tag
+																v-if="question.firstMainLogic" type="warning" effect="dark" round>首次主要逻辑</el-tag><el-tag
+																v-if="question.firstFullSolve" type="danger" effect="dark" round>首位完整破解</el-tag>
+														</div>
+													</div>
+													<div class="verdict-zone">
+														<span :class="['host-response', question.verdict || 'waiting']">
+															汤主回应：{{ question.verdict ? verdictLabels[question.verdict] : '待回应' }}
+														</span>
+														<span v-if="question.important" class="important-chip">关键</span>
+														<button v-if="canHost && !question.clientStatus" class="host-operate-button" type="button" @click.stop="
+															selectedQuestionId =
+															selectedQuestionId === question.id ? '' : question.id
+															">{{
+															selectedQuestionId === question.id ? '收起操作' : '主持操作'
+														}}</button>
+													</div>
+													<div v-if="canHost && !question.clientStatus && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
+														<div class="host-action-heading">
+															<strong>主持人操作</strong>
+															<small>判定回答、标记线索，并记录本轮积分依据</small>
+														</div>
+														<div class="action-group">
+															<span class="action-title">判定</span><button class="judge yes" type="button"
+																@click="setVerdict(question.id, 'yes')">
+																是</button><button class="judge no" type="button" @click="setVerdict(question.id, 'no')">
+																不是</button><button class="judge both" type="button"
+																@click="setVerdict(question.id, 'both')">
+																是也不是</button><button class="judge mute" type="button"
+																@click="setVerdict(question.id, 'irrelevant')">
+																不重要
+															</button>
+														</div>
+														<div class="action-group">
+															<span class="action-title">标记</span><button
+																:class="['judge', 'flag', { active: question.important }]" type="button"
+																@click="toggleImportant(question)">
+																{{ question.important ? '已标重要' : '标为重要' }}</button><button class="judge delete"
+																type="button" @click="removeQuestion(question.id)">
+																删除
+															</button>
+														</div>
+														<div class="score-grid">
+															<label>问题价值<el-select :model-value="question.quality" size="small" @change="
+																(value: QuestionQuality) =>
+																	updateQuestionScoring(question, { quality: value })
+															"><el-option v-for="(label, value) in qualityLabels" :key="value" :label="label"
+																		:value="value" /></el-select></label><label>猜中程度<el-select
+																	:model-value="question.truthGuess" size="small" @change="
+																		(value: TruthGuess) =>
+																			updateQuestionScoring(question, { truthGuess: value })
+																	"><el-option v-for="(label, value) in truthGuessLabels" :key="value" :label="label"
+																		:value="value" /></el-select></label>
+														</div>
+														<div class="achievement-row">
+															<el-checkbox :model-value="question.firstCoreClue" @change="
+																(value: boolean) =>
+																	updateQuestionScoring(question, {
+																		firstCoreClue: value,
+																	})
+															">首次核心线索</el-checkbox><el-checkbox :model-value="question.firstMainLogic" @change="
+																(value: boolean) =>
+																	updateQuestionScoring(question, {
+																		firstMainLogic: value,
+																	})
+															">首次主要逻辑</el-checkbox><el-checkbox :model-value="question.firstFullSolve" @change="
+																(value: boolean) =>
+																	updateQuestionScoring(question, {
+																		firstFullSolve: value,
+																	})
+															">首位完整破解</el-checkbox>
+														</div>
+													</div>
 												</div>
-												<p v-html="highlightQuestionText(question.text)" />
-												<div v-if="
-													question.quality !== 'none' ||
-													question.truthGuess !== 'none' ||
-													question.firstCoreClue ||
-													question.firstMainLogic ||
-													question.firstFullSolve
-												" class="public-score-tags">
-													<el-tag v-if="question.quality !== 'none'" type="success" effect="plain"
-														round>{{ qualityLabels[question.quality] }}</el-tag><el-tag
-														v-if="question.truthGuess !== 'none'" type="warning" effect="plain"
-														round>{{ truthGuessLabels[question.truthGuess] }}</el-tag><el-tag
-														v-if="question.firstCoreClue" type="success" effect="dark" round>首次核心线索</el-tag><el-tag
-														v-if="question.firstMainLogic" type="warning" effect="dark" round>首次主要逻辑</el-tag><el-tag
-														v-if="question.firstFullSolve" type="danger" effect="dark" round>首位完整破解</el-tag>
-												</div>
-											</div>
-											<div class="verdict-zone">
-												<div class="tag-line">
-													<el-tag v-if="question.important" type="warning" effect="dark" round>重要</el-tag><el-tag
-														v-if="question.verdict" :type="verdictTypes[question.verdict]" effect="dark"
-														round>{{ verdictLabels[question.verdict] }}</el-tag><span v-if="!question.verdict"
-														class="waiting">等待主持人</span>
-												</div>
-												<el-button v-if="canHost && !question.clientStatus" size="small" text>{{
-													selectedQuestionId === question.id ? '收起操作' : '主持操作'
-												}}</el-button>
-											</div>
-											<div v-if="canHost && !question.clientStatus && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
-												<div class="host-action-heading">
-													<strong>主持人操作</strong>
-													<small>判定回答、标记线索，并记录本轮积分依据</small>
-												</div>
-												<div class="action-group">
-													<span class="action-title">判定</span><button class="judge yes" type="button"
-														@click="setVerdict(question.id, 'yes')">
-														是</button><button class="judge no" type="button" @click="setVerdict(question.id, 'no')">
-														不是</button><button class="judge both" type="button"
-														@click="setVerdict(question.id, 'both')">
-														是也不是</button><button class="judge mute" type="button"
-														@click="setVerdict(question.id, 'irrelevant')">
-														不重要
-													</button>
-												</div>
-												<div class="action-group">
-													<span class="action-title">标记</span><button
-														:class="['judge', 'flag', { active: question.important }]" type="button"
-														@click="toggleImportant(question)">
-														{{ question.important ? '已标重要' : '标为重要' }}</button><button class="judge delete"
-														type="button" @click="removeQuestion(question.id)">
-														删除
-													</button>
-												</div>
-												<div class="score-grid">
-													<label>问题价值<el-select :model-value="question.quality" size="small" @change="
-														(value: QuestionQuality) =>
-															updateQuestionScoring(question, { quality: value })
-													"><el-option v-for="(label, value) in qualityLabels" :key="value" :label="label"
-																:value="value" /></el-select></label><label>猜中程度<el-select
-															:model-value="question.truthGuess" size="small" @change="
-																(value: TruthGuess) =>
-																	updateQuestionScoring(question, { truthGuess: value })
-															"><el-option v-for="(label, value) in truthGuessLabels" :key="value" :label="label"
-																:value="value" /></el-select></label>
-												</div>
-												<div class="achievement-row">
-													<el-checkbox :model-value="question.firstCoreClue" @change="
-														(value: boolean) =>
-															updateQuestionScoring(question, {
-																firstCoreClue: value,
-															})
-													">首次核心线索</el-checkbox><el-checkbox :model-value="question.firstMainLogic" @change="
-														(value: boolean) =>
-															updateQuestionScoring(question, {
-																firstMainLogic: value,
-															})
-													">首次主要逻辑</el-checkbox><el-checkbox :model-value="question.firstFullSolve" @change="
-														(value: boolean) =>
-															updateQuestionScoring(question, {
-																firstFullSolve: value,
-															})
-													">首位完整破解</el-checkbox>
-												</div>
-											</div>
 										</article>
 									</div>
 								</div>
