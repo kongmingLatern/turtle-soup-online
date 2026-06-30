@@ -471,6 +471,21 @@ function escapeHtml(value: string) {
 		.replace(/'/g, '&#039;')
 }
 
+function normalizeSearchText(value: string) {
+	return value.normalize('NFKC').trim().toLowerCase()
+}
+
+function splitSearchTerms(value: string) {
+	return normalizeSearchText(value).split(/\s+/).filter(Boolean)
+}
+
+const verdictSearchAliases: Record<Verdict, string[]> = {
+	yes: ['是', '对', '可以', '肯定', '汤主回应是'],
+	no: ['不是', '否', '不对', '不可以', '汤主回应不是'],
+	both: ['是也不是', '部分是', '部分不是', '两者都有', '汤主回应是也不是'],
+	irrelevant: ['不重要', '无关', '无需回答', '汤主回应不重要'],
+}
+
 function getQuestionSearchText(question: Question) {
 	const verdictLabel = question.verdict ? verdictLabels[question.verdict] : '待判定'
 	return [
@@ -478,25 +493,36 @@ function getQuestionSearchText(question: Question) {
 		question.author.displayName,
 		question.author.username,
 		verdictLabel,
+		`汤主回应 ${question.verdict ? verdictLabel : '待回应'}`,
+		question.verdict ? '已回应 已判定' : '待回应 待判定',
 		question.important ? '重要' : '',
+		question.important ? '关键' : '',
+		...(question.verdict ? verdictSearchAliases[question.verdict] : []),
 		...questionSignalTags(question).map(tag => tag.label),
 	]
 		.join(' ')
+		.normalize('NFKC')
 		.toLowerCase()
 }
 
 function highlightQuestionText(text: string) {
-	const keyword = questionSearchText.value.trim()
 	const escapedText = escapeHtml(text)
-	if (!keyword) return escapedText
-	const escapedKeyword = escapeHtml(keyword).replace(
-		/[.*+?^${}()|[\]\\]/g,
-		'\\$&',
-	)
-	return escapedText.replace(
-		new RegExp(escapedKeyword, 'gi'),
-		match => `<mark>${match}</mark>`,
-	)
+	const keywords = questionSearchText.value
+		.trim()
+		.split(/\s+/)
+		.filter(Boolean)
+		.sort((a, b) => b.length - a.length)
+	if (!keywords.length) return escapedText
+	return keywords.reduce((result, keyword) => {
+		const escapedKeyword = escapeHtml(keyword).replace(
+			/[.*+?^${}()|[\]\\]/g,
+			'\\$&',
+		)
+		return result.replace(
+			new RegExp(escapedKeyword, 'gi'),
+			match => `<mark>${match}</mark>`,
+		)
+	}, escapedText)
 }
 
 function getHistoryMvpUser(item: SoupHistoryItem) {
@@ -584,6 +610,7 @@ const mvpSubmitting = ref(false)
 const mvpResult = ref<MvpResult | null>(null)
 const soupHistoryDetailOpen = ref(false)
 const selectedSoupHistoryItem = ref<SoupHistoryItem | null>(null)
+const roomSetupOpen = ref(false)
 const customSoupOpen = ref(false)
 const soupManagerOpen = ref(false)
 const editingSoupId = ref('')
@@ -760,12 +787,15 @@ const filteredQuestionBase = computed(() => {
 	}
 })
 const normalizedQuestionSearch = computed(() =>
-	questionSearchText.value.trim().toLowerCase(),
+	normalizeSearchText(questionSearchText.value),
 )
+const questionSearchTerms = computed(() => splitSearchTerms(questionSearchText.value))
 const visibleQuestions = computed(() => {
-	if (!normalizedQuestionSearch.value) return filteredQuestionBase.value
+	if (!questionSearchTerms.value.length) return filteredQuestionBase.value
 	return filteredQuestionBase.value.filter(question =>
-		getQuestionSearchText(question).includes(normalizedQuestionSearch.value),
+		questionSearchTerms.value.every(term =>
+			getQuestionSearchText(question).includes(term),
+		),
 	)
 })
 const chatQuestions = computed(() => [...visibleQuestions.value].reverse())
@@ -1021,20 +1051,6 @@ const ambiencePreviewStyle = computed(() =>
 	hostBackdropCss.value
 		? { '--room-backdrop-image': hostBackdropCss.value }
 		: {},
-)
-const selectedSoupForSwitch = computed(() =>
-	soups.value.find(soup => soup.id === selectedSoupId.value),
-)
-const isSelectedCurrentSoup = computed(() =>
-	Boolean(
-		room.value &&
-		selectedSoupForSwitch.value &&
-		room.value.title === selectedSoupForSwitch.value.title &&
-		sanitizeRichText(room.value.surface) ===
-		sanitizeRichText(selectedSoupForSwitch.value.surface) &&
-		sanitizeRichText(room.value.answer) ===
-		sanitizeRichText(selectedSoupForSwitch.value.answer),
-	),
 )
 const soupDrawerDirection = computed(() => (isMobile.value ? 'btt' : 'rtl'))
 
@@ -1562,38 +1578,8 @@ async function createRoom(options: { replaceCurrent?: boolean } = {}) {
 	}
 	applyRoom(data)
 	selectedRole.value = 'host'
+	roomSetupOpen.value = false
 	ElMessage.success(`房间 ${data.code} 已创建`)
-}
-
-async function handleRoomActionCommand(command: string | number | object) {
-	if (command === 'create') {
-		await createRoom({ replaceCurrent: true })
-		return
-	}
-	if (command === 'switch') {
-		await switchRoomSoup()
-	}
-}
-
-async function switchRoomSoup() {
-	if (!room.value) return createRoom()
-	if (!canHost.value) return ElMessage.warning('只有主持人可以切换题目')
-	if (!selectedSoupId.value) return ElMessage.warning('请先选择汤面')
-	if (isSelectedCurrentSoup.value) return ElMessage.warning('请先选择新的汤面')
-	const confirmed = window.confirm(
-		'切换海龟汤会清空当前房间的问答、重要线索、画板和结算记录，确定切换吗？',
-	)
-	if (!confirmed) return
-	const data = await request<RoomState>(
-		`/rooms/${room.value.code}/switch-soup`,
-		{
-			method: 'POST',
-			body: JSON.stringify({ soupId: selectedSoupId.value }),
-		},
-	)
-	applyRoom(data)
-	resetRoundState(data)
-	ElMessage.success('已切换海龟汤，本局记录已清空')
 }
 
 async function joinRoom(code = roomCodeInput.value, showMessage = true) {
@@ -3543,56 +3529,28 @@ function formatTime(time: string) {
 						</div>
 					</section>
 					<section class="surface-card config-card">
-						<div class="section-head compact">
-							<div class="title-with-icon">
-								<House /><strong>房间配置</strong>
+							<div class="section-head compact">
+								<div class="title-with-icon">
+									<House /><strong>房间配置</strong>
+								</div>
+								<div class="config-head-actions">
+									<el-button v-if="!room" size="small" type="primary" :icon="Plus" :disabled="!user"
+										@click="roomSetupOpen = true">开房</el-button>
+									<el-tag v-if="room" round type="success" effect="plain">进行中</el-tag>
+								</div>
 							</div>
-							<el-tag v-if="room" round type="success" effect="plain">进行中</el-tag>
-						</div>
-						<div v-if="room" class="room-config-summary">
-							<div><span>房间号</span><strong>{{ room.code }}</strong></div>
-							<div><span>主持人</span><strong>{{ room.host.displayName }}</strong></div>
-							<div><span>人数</span><strong>{{memberStats.filter(member => member.online).length}} / {{ memberStats.length || 0 }} 人</strong></div>
-							<div><span>提问</span><strong>{{ pendingQuestions }} 待判定</strong></div>
-						</div>
-						<div class="config-stack">
-							<label>选择汤面</label><el-select v-model="selectedSoupId" filterable placeholder="选择自己的汤面"
-								:disabled="!user || !soups.length"><el-option v-for="soup in soups" :key="soup.id" :label="soup.title"
-									:value="soup.id"><span>{{ soup.title }}</span><small>我的汤面 ·
-										{{ difficultyLabels[soup.difficulty] }}</small></el-option></el-select>
-							<el-empty v-if="user && !soups.length" description="还没有自己的汤面" :image-size="54" />
-							<p v-if="room && canHost && isSelectedCurrentSoup" class="switch-warning">
-								请先选择新的汤面
-							</p>
-							<p v-else-if="room && canHost" class="switch-warning">
-								切换后会清空当前房间的问答、重要线索、画板和结算记录。
-							</p>
-							<div class="config-actions">
-								<el-button :icon="Plus" :disabled="!user" @click="openCreateSoupDialog">自建汤面</el-button><el-dropdown
-									trigger="click" :disabled="!user" @command="handleRoomActionCommand">
-									<el-button type="primary" :icon="Plus" :disabled="!user">创建房间</el-button>
-									<template #dropdown>
-										<el-dropdown-menu>
-											<el-dropdown-item command="create" :disabled="!selectedSoupId">
-												创建新房间
-											</el-dropdown-item>
-											<el-dropdown-item command="switch" :disabled="!room ||
-												!canHost ||
-												!selectedSoupId ||
-												isSelectedCurrentSoup
-												">
-												切换当前题目
-											</el-dropdown-item>
-										</el-dropdown-menu>
-									</template>
-								</el-dropdown>
-								<el-button type="info" @click="soupManagerOpen = true">管理汤面</el-button>
+							<div v-if="room" class="room-config-summary">
+								<div><span>房间号</span><strong>{{ room.code }}</strong></div>
+								<div><span>主持人</span><strong>{{ room.host.displayName }}</strong></div>
+								<div><span>人数</span><strong>{{memberStats.filter(member => member.online).length}} / {{ memberStats.length || 0 }} 人</strong></div>
+								<div><span>提问</span><strong>{{ pendingQuestions }} 待判定</strong></div>
 							</div>
-							<label>加入房间</label>
-							<div class="room-row">
-								<el-input v-model="roomCodeInput" placeholder="输入房间号" @keyup.enter="joinRoom()" /><el-button
-									:icon="Right" @click="joinRoom()" />
-							</div>
+							<div class="config-stack">
+								<label>加入房间</label>
+								<div class="room-row">
+									<el-input v-model="roomCodeInput" placeholder="输入房间号" @keyup.enter="joinRoom()" /><el-button
+										:icon="Right" @click="joinRoom()" />
+								</div>
 							<el-button text :icon="CopyDocument" :disabled="!room" @click="copyShareUrl">复制邀请链接</el-button>
 						</div>
 					</section>
@@ -3857,11 +3815,30 @@ function formatTime(time: string) {
 							@pointerup="stopDrawing" @pointercancel="stopDrawing" @pointerleave="stopDrawing" />
 					</div>
 				</div>
-			</section>
+				</section>
 
-			<el-dialog v-model="customSoupOpen" :title="editingSoupId ? '编辑汤面' : '自建汤面'" width="min(720px, 92vw)"><el-form
-					ref="customSoupFormRef" :model="customSoup" :rules="customSoupRules" label-position="top"><el-form-item
-						label="标题" prop="title"><el-input v-model="customSoup.title" /></el-form-item><el-form-item label="汤面"
+				<el-dialog v-model="roomSetupOpen" title="创建房间" width="min(520px, 92vw)">
+					<div class="room-setup-panel">
+						<label>选择汤面</label><el-select v-model="selectedSoupId" filterable placeholder="选择自己的汤面"
+							:disabled="!user || !soups.length"><el-option v-for="soup in soups" :key="soup.id" :label="soup.title"
+								:value="soup.id"><span>{{ soup.title }}</span><small>我的汤面 ·
+									{{ difficultyLabels[soup.difficulty] }}</small></el-option></el-select>
+						<el-empty v-if="user && !soups.length" description="还没有自己的汤面" :image-size="64" />
+						<p v-else-if="!user" class="switch-warning">请先登录后再创建房间</p>
+						<div class="config-actions">
+							<el-button :icon="Plus" :disabled="!user" @click="openCreateSoupDialog">自建汤面</el-button>
+							<el-button type="info" @click="soupManagerOpen = true">管理汤面</el-button>
+						</div>
+					</div>
+					<template #footer>
+						<el-button @click="roomSetupOpen = false">取消</el-button>
+						<el-button type="primary" :icon="Plus" :disabled="!user || !selectedSoupId"
+							@click="createRoom({ replaceCurrent: true })">创建房间</el-button>
+					</template>
+				</el-dialog>
+				<el-dialog v-model="customSoupOpen" :title="editingSoupId ? '编辑汤面' : '自建汤面'" width="min(720px, 92vw)"><el-form
+						ref="customSoupFormRef" :model="customSoup" :rules="customSoupRules" label-position="top"><el-form-item
+							label="标题" prop="title"><el-input v-model="customSoup.title" /></el-form-item><el-form-item label="汤面"
 						prop="surface">
 						<RichTextEditor v-model="customSoup.surface" :min-rows="5" placeholder="写下可公开给玩家的汤面" @blur="
 							customSoupFormRef?.validateField('surface')

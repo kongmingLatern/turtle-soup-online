@@ -318,7 +318,7 @@ textarea {
 
 .desk-grid {
   display: grid;
-  grid-template-columns: minmax(300px, 0.78fr) minmax(560px, 1.12fr) minmax(260px, 0.46fr);
+  grid-template-columns: minmax(260px, 0.62fr) minmax(640px, 1.34fr) minmax(260px, 0.46fr);
   gap: 18px;
   align-items: start;
 }
@@ -2568,6 +2568,12 @@ textarea {
   overflow: hidden;
 }
 
+.config-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .config-card :where(.el-select, .el-input, .el-button, .el-dropdown, .el-dropdown .el-button) {
   max-width: 100%;
 }
@@ -2605,6 +2611,21 @@ textarea {
 .config-actions .el-button {
   min-width: 0;
   padding-inline: 10px;
+}
+
+.room-setup-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.room-setup-panel .el-select,
+.room-setup-panel .el-input,
+.room-setup-panel .el-button {
+  width: 100%;
+}
+
+.room-setup-panel .config-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .room-row {
