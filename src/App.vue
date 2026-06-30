@@ -611,6 +611,7 @@ const mvpResult = ref<MvpResult | null>(null)
 const soupHistoryDetailOpen = ref(false)
 const selectedSoupHistoryItem = ref<SoupHistoryItem | null>(null)
 const roomSetupOpen = ref(false)
+const roomSetupMode = ref<'create' | 'switch'>('create')
 const customSoupOpen = ref(false)
 const soupManagerOpen = ref(false)
 const editingSoupId = ref('')
@@ -1582,6 +1583,32 @@ async function createRoom(options: { replaceCurrent?: boolean } = {}) {
 	ElMessage.success(`房间 ${data.code} 已创建`)
 }
 
+function openRoomSetup(mode: 'create' | 'switch' = 'create') {
+	roomSetupMode.value = mode
+	roomSetupOpen.value = true
+}
+
+async function switchRoomSoup() {
+	if (!room.value) return createRoom()
+	if (!canHost.value) return ElMessage.warning('只有主持人可以切换题目')
+	if (!selectedSoupId.value) return ElMessage.warning('请先选择汤面')
+	const confirmed = window.confirm(
+		'切换海龟汤会清空当前房间的问答、重要线索、画板和结算记录，确定切换吗？',
+	)
+	if (!confirmed) return
+	const data = await request<RoomState>(
+		`/rooms/${room.value.code}/switch-soup`,
+		{
+			method: 'POST',
+			body: JSON.stringify({ soupId: selectedSoupId.value }),
+		},
+	)
+	applyRoom(data)
+	resetRoundState(data)
+	roomSetupOpen.value = false
+	ElMessage.success('已切换海龟汤，本局记录已清空')
+}
+
 async function joinRoom(code = roomCodeInput.value, showMessage = true) {
 	const normalized = code.trim().toUpperCase()
 	if (!normalized) return
@@ -1639,6 +1666,25 @@ function resetRoundState(nextRoom?: RoomState) {
 	answerHidden.value = true
 	clearThoughtBoardStorage(previousRoomCode)
 	nextTick(() => restoreCanvas(''))
+}
+
+function leaveRoomByUser() {
+	if (!room.value) return
+	leaveCurrentRoom()
+	room.value = null
+	roomCodeInput.value = ''
+	roomMembers.value = []
+	presenceEvents.value = []
+	questionText.value = ''
+	selectedQuestionId.value = ''
+	settlement.value = null
+	mvpResult.value = null
+	answerHidden.value = true
+	const url = new URL(window.location.href)
+	url.searchParams.delete('room')
+	window.history.replaceState({}, '', url)
+	shareUrl.value = url.toString()
+	ElMessage.success('已退出房间')
 }
 
 function revealQuestion(questionId: string) {
@@ -3531,12 +3577,15 @@ function formatTime(time: string) {
 					<section class="surface-card config-card">
 							<div class="section-head compact">
 								<div class="title-with-icon">
-									<House /><strong>房间配置</strong>
+									<House /><strong >房间配置</strong>
 								</div>
 								<div class="config-head-actions">
 									<el-button v-if="!room" size="small" type="primary" :icon="Plus" :disabled="!user"
-										@click="roomSetupOpen = true">开房</el-button>
-									<el-tag v-if="room" round type="success" effect="plain">进行中</el-tag>
+										@click="openRoomSetup('create')">开房</el-button>
+									<el-button v-else-if="canHost" size="small" type="primary" plain :icon="Refresh"
+										@click="openRoomSetup('switch')">切换汤面</el-button>
+									<el-button v-else size="small" type="danger" plain @click="leaveRoomByUser">退出房间</el-button>
+									<!-- <el-tag v-if="room" round type="success" effect="plain">进行中</el-tag> -->
 								</div>
 							</div>
 							<div v-if="room" class="room-config-summary">
@@ -3817,7 +3866,8 @@ function formatTime(time: string) {
 				</div>
 				</section>
 
-				<el-dialog v-model="roomSetupOpen" title="创建房间" width="min(520px, 92vw)">
+				<el-dialog v-model="roomSetupOpen" :title="roomSetupMode === 'switch' ? '切换汤面' : '创建房间'"
+					width="min(520px, 92vw)">
 					<div class="room-setup-panel">
 						<label>选择汤面</label><el-select v-model="selectedSoupId" filterable placeholder="选择自己的汤面"
 							:disabled="!user || !soups.length"><el-option v-for="soup in soups" :key="soup.id" :label="soup.title"
@@ -3825,6 +3875,9 @@ function formatTime(time: string) {
 									{{ difficultyLabels[soup.difficulty] }}</small></el-option></el-select>
 						<el-empty v-if="user && !soups.length" description="还没有自己的汤面" :image-size="64" />
 						<p v-else-if="!user" class="switch-warning">请先登录后再创建房间</p>
+						<p v-else-if="roomSetupMode === 'switch'" class="switch-warning">
+							切换当前房间会清空本局问答、重要线索、画板和结算记录；重新开房会生成新的房间号。
+						</p>
 						<div class="config-actions">
 							<el-button :icon="Plus" :disabled="!user" @click="openCreateSoupDialog">自建汤面</el-button>
 							<el-button type="info" @click="soupManagerOpen = true">管理汤面</el-button>
@@ -3832,7 +3885,14 @@ function formatTime(time: string) {
 					</div>
 					<template #footer>
 						<el-button @click="roomSetupOpen = false">取消</el-button>
-						<el-button type="primary" :icon="Plus" :disabled="!user || !selectedSoupId"
+						<template v-if="roomSetupMode === 'switch'">
+							<el-button :disabled="!user || !selectedSoupId || !canHost" @click="switchRoomSoup">
+								切换当前房间
+							</el-button>
+							<el-button type="primary" :icon="Plus" :disabled="!user || !selectedSoupId"
+								@click="createRoom({ replaceCurrent: true })">换汤重新开房</el-button>
+						</template>
+						<el-button v-else type="primary" :icon="Plus" :disabled="!user || !selectedSoupId"
 							@click="createRoom({ replaceCurrent: true })">创建房间</el-button>
 					</template>
 				</el-dialog>
@@ -4434,3 +4494,4 @@ function formatTime(time: string) {
 		</main>
 	</el-config-provider>
 </template>
+

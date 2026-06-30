@@ -1,25 +1,39 @@
 :root {
-  --bg: #050505;
-  --surface: rgba(25, 25, 25, 0.9);
-  --surface-strong: #202020;
-  --text: #f1f1f1;
-  --muted: #9b9b9b;
-  --line: rgba(255, 255, 255, 0.1);
+  --bg: #f3f6fb;
+  --surface: rgba(255, 255, 255, 0.88);
+  --surface-strong: #ffffff;
+  --text: #101828;
+  --muted: #667085;
+  --line: rgba(15, 23, 42, 0.12);
   --accent: #55c7be;
-  --gold: #f6a85d;
-  --danger: #f56565;
-  --shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
-  --canvas: #121212;
+  --gold: #d9822b;
+  --danger: #dc2626;
+  --shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
+  --canvas: #ffffff;
+  --page-grid: rgba(15, 23, 42, 0.055);
+  --page-grid-soft: rgba(15, 23, 42, 0.04);
+  --page-gradient-start: #f7fafc;
+  --page-gradient-mid: #eef6f5;
+  --page-gradient-end: #f6f0e7;
+  --header-surface: rgba(255, 255, 255, 0.88);
+  --inset-highlight: rgba(255, 255, 255, 0.82);
+  --avatar-ring: rgba(255, 255, 255, 0.92);
+  --bubble-shadow: rgba(15, 23, 42, 0.12);
+  --room-backdrop-overlay: linear-gradient(180deg, rgba(248, 250, 252, 0.76), rgba(248, 250, 252, 0.9));
+  --room-backdrop-grid: rgba(15, 23, 42, 0.04);
+  --room-backdrop-grid-soft: rgba(15, 23, 42, 0.03);
   --primaryColor: #409eff;
-  --el-bg-color: #1b1b1b;
-  --el-bg-color-overlay: #242424;
-  --el-border-color: rgba(255, 255, 255, 0.12);
-  --el-border-color-light: rgba(255, 255, 255, 0.1);
-  --el-fill-color-blank: #1f1f1f;
-  --el-text-color-primary: #f1f1f1;
-  --el-text-color-regular: #d7d7d7;
-  --el-text-color-secondary: #9b9b9b;
-  color-scheme: dark;
+  --el-bg-color: #ffffff;
+  --el-bg-color-overlay: #ffffff;
+  --el-border-color: rgba(15, 23, 42, 0.14);
+  --el-border-color-light: rgba(15, 23, 42, 0.1);
+  --el-fill-color-blank: #ffffff;
+  --el-fill-color-light: #f8fafc;
+  --el-fill-color-lighter: #f8fafc;
+  --el-text-color-primary: #101828;
+  --el-text-color-regular: #344054;
+  --el-text-color-secondary: #667085;
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-family:
@@ -42,6 +56,28 @@
   --danger: #f56565;
   --shadow: 0 28px 90px rgba(0, 0, 0, 0.46);
   --canvas: #121212;
+  --page-grid: rgba(255, 255, 255, 0.025);
+  --page-grid-soft: rgba(255, 255, 255, 0.02);
+  --page-gradient-start: #050505;
+  --page-gradient-mid: #0a0a0a;
+  --page-gradient-end: #050505;
+  --header-surface: rgba(24, 24, 24, 0.92);
+  --inset-highlight: rgba(255, 255, 255, 0.06);
+  --avatar-ring: #181818;
+  --bubble-shadow: rgba(0, 0, 0, 0.16);
+  --room-backdrop-overlay: linear-gradient(180deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.86));
+  --room-backdrop-grid: rgba(255, 255, 255, 0.026);
+  --room-backdrop-grid-soft: rgba(255, 255, 255, 0.02);
+  --el-bg-color: #1b1b1b;
+  --el-bg-color-overlay: #242424;
+  --el-border-color: rgba(255, 255, 255, 0.12);
+  --el-border-color-light: rgba(255, 255, 255, 0.1);
+  --el-fill-color-blank: #1f1f1f;
+  --el-fill-color-light: #262626;
+  --el-fill-color-lighter: #2a2a2a;
+  --el-text-color-primary: #f1f1f1;
+  --el-text-color-regular: #d7d7d7;
+  --el-text-color-secondary: #9b9b9b;
   color-scheme: dark;
 }
 
@@ -55,9 +91,9 @@ body {
   margin: 0;
   overflow-x: hidden;
   background:
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(180deg, #050505 0%, #0a0a0a 48%, #050505 100%);
+    linear-gradient(var(--page-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--page-grid-soft) 1px, transparent 1px),
+    linear-gradient(180deg, var(--page-gradient-start) 0%, var(--page-gradient-mid) 48%, var(--page-gradient-end) 100%);
   background-size: 32px 32px, 32px 32px, auto;
 }
 
@@ -87,7 +123,7 @@ textarea {
   pointer-events: none;
   opacity: 0;
   background-image:
-    linear-gradient(180deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.86)),
+    var(--room-backdrop-overlay),
     var(--room-backdrop-image);
   background-position: center;
   background-size: cover;
@@ -100,9 +136,9 @@ textarea {
   inset: 0;
   content: '';
   background:
-    linear-gradient(rgba(255, 255, 255, 0.026) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    radial-gradient(circle at 50% 0, rgba(255, 255, 255, 0.08), transparent 38rem);
+    linear-gradient(var(--room-backdrop-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--room-backdrop-grid-soft) 1px, transparent 1px),
+    radial-gradient(circle at 50% 0, color-mix(in srgb, var(--accent) 10%, transparent), transparent 38rem);
   background-size: 36px 36px, 36px 36px, auto;
 }
 
@@ -125,8 +161,8 @@ textarea {
   padding: 18px 22px;
   border: 1px solid var(--line);
   border-radius: 22px;
-  background: rgba(24, 24, 24, 0.92);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  background: var(--header-surface);
+  box-shadow: inset 0 1px 0 var(--inset-highlight);
   backdrop-filter: blur(22px) saturate(1.06);
 }
 
@@ -178,7 +214,7 @@ textarea {
   height: 34px;
   padding: 0;
   overflow: visible;
-  border: 2px solid #181818;
+  border: 2px solid var(--avatar-ring);
   background: transparent;
 }
 
@@ -207,7 +243,7 @@ textarea {
   border-radius: 22px;
   background: var(--surface);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    inset 0 1px 0 var(--inset-highlight),
     var(--shadow);
   backdrop-filter: blur(24px) saturate(1.08);
 }
@@ -1909,30 +1945,56 @@ textarea {
   min-height: 19px;
   align-items: center;
   padding: 0 10px;
-  border: 1px solid color-mix(in srgb, #93c47d 34%, var(--line));
+  border: 1px solid color-mix(in srgb, #15803d 30%, var(--line));
   border-radius: 999px;
-  color: #9fd27e;
-  background: rgba(62, 97, 52, 0.42);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  color: #166534;
+  background: color-mix(in srgb, #dcfce7 82%, var(--surface));
+  box-shadow: inset 0 1px 0 var(--inset-highlight);
   font-size: 12px;
   font-weight: 900;
   line-height: 1;
 }
 
 .host-response.no {
+  border-color: color-mix(in srgb, #dc2626 28%, var(--line));
+  color: #991b1b;
+  background: color-mix(in srgb, #fee2e2 82%, var(--surface));
+}
+
+.host-response.both {
+  border-color: color-mix(in srgb, #d97706 32%, var(--line));
+  color: #92400e;
+  background: color-mix(in srgb, #ffedd5 84%, var(--surface));
+}
+
+.host-response.irrelevant,
+.host-response.waiting {
+  border-color: color-mix(in srgb, var(--muted) 22%, var(--line));
+  color: color-mix(in srgb, var(--muted) 72%, var(--text));
+  background: color-mix(in srgb, var(--surface-strong) 72%, transparent);
+}
+
+:root.dark .host-response {
+  border-color: color-mix(in srgb, #93c47d 34%, var(--line));
+  color: #9fd27e;
+  background: rgba(62, 97, 52, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+:root.dark .host-response.no {
   border-color: rgba(239, 68, 68, 0.28);
   color: #f58c8c;
   background: rgba(107, 45, 45, 0.36);
 }
 
-.host-response.both {
+:root.dark .host-response.both {
   border-color: rgba(246, 168, 93, 0.34);
   color: #ffc06d;
   background: rgba(112, 72, 31, 0.38);
 }
 
-.host-response.irrelevant,
-.host-response.waiting {
+:root.dark .host-response.irrelevant,
+:root.dark .host-response.waiting {
   border-color: color-mix(in srgb, var(--muted) 22%, var(--line));
   color: var(--muted);
   background: color-mix(in srgb, var(--surface-strong) 62%, transparent);
@@ -1973,7 +2035,7 @@ textarea {
   border-radius: 18px 18px 18px 6px;
   color: var(--text);
   background: color-mix(in srgb, var(--surface-strong) 88%, transparent);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.16);
+  box-shadow: 0 8px 22px var(--bubble-shadow);
 }
 
 .question-bubble::before {
@@ -3251,9 +3313,9 @@ canvas.readonly {
 @media (max-width: 760px) {
   body {
     background:
-      linear-gradient(rgba(148, 163, 184, 0.07) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
-      linear-gradient(180deg, color-mix(in srgb, var(--bg) 92%, #ffffff 8%), var(--bg));
+      linear-gradient(var(--page-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--page-grid-soft) 1px, transparent 1px),
+      linear-gradient(180deg, var(--page-gradient-start), var(--bg));
     background-size: 28px 28px, 28px 28px, auto;
   }
 
