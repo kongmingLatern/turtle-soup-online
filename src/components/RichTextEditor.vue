@@ -40,6 +40,7 @@ const highlightColor = ref('#fef3c7')
 const activeMarks = ref<Record<string, boolean>>({})
 const activeBlock = ref('P')
 const syncingFromModel = ref(false)
+const lastEmittedValue = ref<string | null>(null)
 const savedRange = ref<Range | null>(null)
 
 const textColors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#111827']
@@ -61,6 +62,10 @@ watch(
 		const editor = editorRef.value
 		const nextValue = sanitizeRichText(value)
 		if (!editor || editor.innerHTML === nextValue) return
+		if (lastEmittedValue.value === nextValue) {
+			lastEmittedValue.value = null
+			return
+		}
 		syncingFromModel.value = true
 		editor.innerHTML = nextValue
 		nextTick(() => {
@@ -109,15 +114,22 @@ function restoreSelection() {
 	selection.addRange(range)
 }
 
-function emitValue() {
+function emitValue(options: { normalizeDom?: boolean } = {}) {
 	if (syncingFromModel.value) return
 	const editor = editorRef.value
 	if (!editor) return
 	const nextValue = sanitizeRichText(editor.innerHTML)
-	if (editor.innerHTML !== nextValue) editor.innerHTML = nextValue
+	if (options.normalizeDom && editor.innerHTML !== nextValue) {
+		editor.innerHTML = nextValue
+	}
+	lastEmittedValue.value = nextValue
 	emit('update:modelValue', nextValue)
 	emit('input', nextValue)
 	refreshToolbarState()
+}
+
+function handleInput() {
+	emitValue()
 }
 
 function runCommand(command: EditorCommand, value?: string) {
@@ -403,12 +415,12 @@ function escapeHtml(value: string) {
 			:contenteditable="!disabled"
 			:data-placeholder="placeholder"
 			:style="editorStyle"
-			@input="emitValue"
+			@input="handleInput"
 			@focus="refreshToolbarState"
 			@keyup="refreshToolbarState"
 			@mouseup="refreshToolbarState"
 			@blur="
-				emitValue();
+				emitValue({ normalizeDom: true });
 				emit('blur')
 			"
 			@paste="handlePaste"
