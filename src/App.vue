@@ -557,6 +557,8 @@ const timelineRef = ref<HTMLElement | null>(null)
 const questionViewMode = ref<QuestionFilter>('all')
 const questionSearchText = ref('')
 const selectedQuestionId = ref('')
+const mobileHostActionOpen = ref(false)
+const mobileHostActionQuestion = ref<Question | null>(null)
 const insightDrawerOpen = ref(false)
 const activeInsightMode = ref<InsightMode>('confirmed')
 const thoughtBoardOpen = ref(false)
@@ -577,6 +579,7 @@ const resizingThoughtBoard = ref<ThoughtResizeState | null>(null)
 const thoughtBoardHeight = ref(100)
 const shareUrl = ref(window.location.href)
 const answerHidden = ref(true)
+const surfaceViewMode = ref<'preview' | 'edit'>('edit')
 const activePanel = ref<'host' | 'player' | 'answer' | 'canvas'>('answer')
 const toolDockOpen = ref(false)
 const audioRef = ref<HTMLAudioElement | null>(null)
@@ -690,6 +693,7 @@ let socket: Socket | null = null
 let canvasSaveTimer: number | undefined
 let canvasPreviewTimer: number | undefined
 let roomSaveTimer: number | undefined
+let mobileMediaQuery: MediaQueryList | null = null
 let syncingAmbience = false
 let ambienceDirty = false
 const presenceNotifyAt = new Map<string, number>()
@@ -1135,9 +1139,11 @@ watch(authMode, () => {
 })
 
 onMounted(async () => {
+	mobileMediaQuery = window.matchMedia('(max-width: 760px)')
 	updateViewportState()
 	window.addEventListener('resize', resizeCanvas)
 	window.addEventListener('resize', updateViewportState)
+	mobileMediaQuery.addEventListener('change', updateViewportState)
 	window.addEventListener('pointermove', resizeThoughtBoard)
 	window.addEventListener('pointerup', stopThoughtBoardResize)
 	window.addEventListener('beforeunload', handleBeforeUnload)
@@ -1154,6 +1160,7 @@ onBeforeUnmount(() => {
 	window.clearTimeout(roomSaveTimer)
 	window.removeEventListener('resize', resizeCanvas)
 	window.removeEventListener('resize', updateViewportState)
+	mobileMediaQuery?.removeEventListener('change', updateViewportState)
 	window.removeEventListener('pointermove', resizeThoughtBoard)
 	window.removeEventListener('pointerup', stopThoughtBoardResize)
 	window.removeEventListener('beforeunload', handleBeforeUnload)
@@ -1173,7 +1180,8 @@ function getInitialRoomCode() {
 }
 
 function updateViewportState() {
-	isMobile.value = window.matchMedia('(max-width: 760px)').matches
+	isMobile.value =
+		mobileMediaQuery?.matches ?? window.matchMedia('(max-width: 760px)').matches
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -1666,6 +1674,46 @@ function resetRoundState(nextRoom?: RoomState) {
 	answerHidden.value = true
 	clearThoughtBoardStorage(previousRoomCode)
 	nextTick(() => restoreCanvas(''))
+}
+
+function toggleQuestionSelection(questionId: string) {
+	if (isMobile.value) return
+	selectedQuestionId.value = selectedQuestionId.value === questionId ? '' : questionId
+}
+
+function openHostAction(question: Question) {
+	if (isMobile.value || window.matchMedia('(max-width: 760px)').matches) {
+		mobileHostActionQuestion.value = question
+		mobileHostActionOpen.value = true
+		return
+	}
+	selectedQuestionId.value = selectedQuestionId.value === question.id ? '' : question.id
+}
+
+async function applyMobileVerdict(verdict: Verdict) {
+	const question = mobileHostActionQuestion.value
+	if (!question) return
+	await setVerdict(question.id, verdict)
+	mobileHostActionOpen.value = false
+}
+
+async function toggleMobileImportant() {
+	const question = mobileHostActionQuestion.value
+	if (!question) return
+	await toggleImportant(question)
+}
+
+async function removeMobileQuestion() {
+	const question = mobileHostActionQuestion.value
+	if (!question) return
+	await removeQuestion(question.id)
+	mobileHostActionOpen.value = false
+}
+
+async function updateMobileQuestionScoring(patch: Partial<QuestionSignal>) {
+	const question = mobileHostActionQuestion.value
+	if (!question) return
+	await updateQuestionScoring(question, patch)
 }
 
 function leaveRoomByUser() {
@@ -3334,25 +3382,35 @@ function formatTime(time: string) {
 			<section class="desk-grid">
 				<aside class="story-column">
 					<section class="surface-card story-card">
-						<div class="section-head">
-							<div>
-								<p class="eyebrow">汤面</p>
-								<el-input v-if="canHost && room" v-model="room.title" class="title-input" @change="saveRoom" />
-								<h2 v-else>
-									{{ room?.title ?? '请选择汤面并创建或加入房间' }}
-								</h2>
+							<div class="section-head surface-section-head">
+						
+								<div style="margin-bottom: 10px;">
+									<el-space style="width: 100%;justify-content: space-between;" >
+									<p class="eyebrow">汤面</p>
+										<div class="surface-head-actions">
+									<el-segmented v-if="canHost && room" v-model="surfaceViewMode" class="surface-mode-switch" :options="[
+										{ label: '预览', value: 'preview' },
+										{ label: '编辑', value: 'edit' },
+									]" />
+									<el-tag :type="canHost ? 'success' : 'info'" effect="dark">{{
+										canHost ? '主持人' : '玩家'
+									}}</el-tag>
+																	</div>
+									</el-space>
+									<el-input v-if="canHost && room && surfaceViewMode === 'edit'" v-model="room.title" class="title-input"
+										@change="saveRoom" />
+									<h2 v-else>
+										{{ room?.title ?? '请选择汤面并创建或加入房间' }}
+									</h2>
+								</div>
 							</div>
-							<el-tag :type="canHost ? 'success' : 'info'" effect="dark">{{
-								canHost ? '主持人' : '玩家'
-							}}</el-tag>
-						</div>
-						<RichTextEditor v-if="canHost && room" v-model="room.surface" :min-rows="8" placeholder="写下可公开给玩家的汤面"
-							@blur="saveRoom" />
-						<p v-else class="surface-text rich-display" v-html="sanitizeRichText(
-							room?.surface ??
-							'还没有进入房间。登录后可创建房间，或用房间号加入。',
-						)
-							" />
+							<RichTextEditor v-if="canHost && room && surfaceViewMode === 'edit'" v-model="room.surface" :min-rows="8"
+								placeholder="写下可公开给玩家的汤面" @blur="saveRoom" />
+							<div v-else class="surface-text rich-display" v-html="sanitizeRichText(
+								room?.surface ??
+								'还没有进入房间。登录后可创建房间，或用房间号加入。',
+							)
+								" />
 					</section>
 
 	<section v-if="hostImportantHints.length" class="surface-card host-hint-card">
@@ -3454,10 +3512,7 @@ function formatTime(time: string) {
 									pending: question.clientStatus === 'sending',
 									failed: question.clientStatus === 'failed',
 								},
-						]" @click="
-								selectedQuestionId =
-								selectedQuestionId === question.id ? '' : question.id
-								">
+							]" @click="toggleQuestionSelection(question.id)">
 								<el-avatar :size="36" :src="question.author.avatarDataUrl" class="question-avatar">{{
 									question.author.displayName.slice(0, 1)
 								}}</el-avatar>
@@ -3492,14 +3547,12 @@ function formatTime(time: string) {
 											汤主回应：{{ question.verdict ? verdictLabels[question.verdict] : '待回应' }}
 										</span>
 										<span v-if="question.important" class="important-chip">关键</span>
-										<button v-if="canHost && !question.clientStatus" class="host-operate-button" type="button" @click.stop="
-											selectedQuestionId =
-											selectedQuestionId === question.id ? '' : question.id
-											">{{
-											selectedQuestionId === question.id ? '收起操作' : '主持操作'
-										}}</button>
-									</div>
-									<div v-if="canHost && !question.clientStatus && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
+											<button v-if="canHost && !question.clientStatus" class="host-operate-button" type="button"
+												@click.stop="openHostAction(question)">{{
+													!isMobile && selectedQuestionId === question.id ? '收起操作' : '主持操作'
+												}}</button>
+										</div>
+										<div v-if="!isMobile && canHost && !question.clientStatus && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
 										<div class="host-action-heading">
 											<strong>主持人操作</strong>
 											<small>判定回答、标记线索，并记录本轮积分依据</small>
@@ -3913,11 +3966,83 @@ function formatTime(time: string) {
 								v-model="customSoup.difficulty"><el-option label="入门" value="easy" /><el-option label="标准"
 									value="medium" /><el-option label="困难" value="hard" /></el-select></el-form-item>
 					</div>
-				</el-form><template #footer><el-button @click="closeCustomSoupDialog">取消</el-button><el-button type="primary"
-						:loading="creatingSoup"
-						@click="createCustomSoup">{{ editingSoupId ? '保存修改' : '保存汤面' }}</el-button></template></el-dialog>
-			<Teleport to="body">
-				<div v-if="isMobile" class="qa-mobile-dock">
+					</el-form><template #footer><el-button @click="closeCustomSoupDialog">取消</el-button><el-button type="primary"
+							:loading="creatingSoup"
+							@click="createCustomSoup">{{ editingSoupId ? '保存修改' : '保存汤面' }}</el-button></template></el-dialog>
+				<el-dialog v-if="isMobile" v-model="mobileHostActionOpen" title="主持人操作" width="min(420px, 92vw)"
+					class="mobile-host-action-dialog">
+					<div v-if="mobileHostActionQuestion" class="mobile-host-action">
+						<section class="mobile-host-question">
+							<div class="question-meta">
+								<span>{{ mobileHostActionQuestion.author.displayName }}</span>
+								<time>{{ formatTime(mobileHostActionQuestion.createdAt) }}</time>
+							</div>
+							<p>{{ mobileHostActionQuestion.text }}</p>
+							<span :class="['host-response', mobileHostActionQuestion.verdict || 'waiting']">
+								汤主回应：{{ mobileHostActionQuestion.verdict ? verdictLabels[mobileHostActionQuestion.verdict] : '待回应' }}
+							</span>
+						</section>
+						<section class="mobile-host-section">
+							<strong>判定</strong>
+							<div class="mobile-host-judge-grid">
+								<button class="judge yes" type="button" @click="applyMobileVerdict('yes')">是</button>
+								<button class="judge no" type="button" @click="applyMobileVerdict('no')">否</button>
+								<button class="judge both" type="button" @click="applyMobileVerdict('both')">是与不是</button>
+								<button class="judge mute" type="button" @click="applyMobileVerdict('irrelevant')">不重要</button>
+							</div>
+						</section>
+						<section class="mobile-host-section">
+							<strong>标记</strong>
+							<div class="mobile-host-judge-grid">
+								<button :class="['judge', 'flag', { active: mobileHostActionQuestion.important }]" type="button"
+									@click="toggleMobileImportant">
+									{{ mobileHostActionQuestion.important ? '已标重要' : '标为重要' }}
+								</button>
+								<button class="judge delete" type="button" @click="removeMobileQuestion">删除问题</button>
+							</div>
+						</section>
+						<section class="mobile-host-section">
+							<strong>积分依据</strong>
+							<div class="mobile-host-score-grid">
+								<label>问题价值<el-select :model-value="mobileHostActionQuestion.quality" size="large" @change="
+									(value: QuestionQuality) =>
+										updateMobileQuestionScoring({ quality: value })
+								"><el-option v-for="(label, value) in qualityLabels" :key="value" :label="label"
+											:value="value" /></el-select></label>
+								<label>猜中程度<el-select :model-value="mobileHostActionQuestion.truthGuess" size="large" @change="
+									(value: TruthGuess) =>
+										updateMobileQuestionScoring({ truthGuess: value })
+								"><el-option v-for="(label, value) in truthGuessLabels" :key="value" :label="label"
+											:value="value" /></el-select></label>
+							</div>
+							<div class="mobile-host-checks">
+								<el-checkbox :model-value="mobileHostActionQuestion.firstCoreClue" @change="
+									(value: boolean) =>
+										updateMobileQuestionScoring({
+											firstCoreClue: value,
+										})
+								">首次核心线索</el-checkbox>
+								<el-checkbox :model-value="mobileHostActionQuestion.firstMainLogic" @change="
+									(value: boolean) =>
+										updateMobileQuestionScoring({
+											firstMainLogic: value,
+										})
+								">首次主要逻辑</el-checkbox>
+								<el-checkbox :model-value="mobileHostActionQuestion.firstFullSolve" @change="
+									(value: boolean) =>
+										updateMobileQuestionScoring({
+											firstFullSolve: value,
+										})
+								">首位完整破解</el-checkbox>
+							</div>
+						</section>
+					</div>
+					<template #footer>
+						<el-button @click="mobileHostActionOpen = false">关闭</el-button>
+					</template>
+				</el-dialog>
+				<Teleport to="body">
+					<div v-if="isMobile" class="qa-mobile-dock">
 					<div v-if="mobileRecentMyQuestions.length"
 						:class="['mobile-my-questions', { collapsed: !mobileAskExpanded }]">
 						<button class="mobile-ask-toggle" type="button" @click="mobileAskExpanded = !mobileAskExpanded">
@@ -4158,10 +4283,7 @@ function formatTime(time: string) {
 														pending: question.clientStatus === 'sending',
 														failed: question.clientStatus === 'failed',
 													},
-											]" @click="
-													selectedQuestionId =
-													selectedQuestionId === question.id ? '' : question.id
-													">
+												]" @click="toggleQuestionSelection(question.id)">
 												<el-avatar :size="36" :src="question.author.avatarDataUrl" class="question-avatar">{{
 													question.author.displayName.slice(0, 1)
 												}}</el-avatar>
@@ -4197,14 +4319,12 @@ function formatTime(time: string) {
 															汤主回应：{{ question.verdict ? verdictLabels[question.verdict] : '待回应' }}
 														</span>
 														<span v-if="question.important" class="important-chip">关键</span>
-														<button v-if="canHost && !question.clientStatus" class="host-operate-button" type="button" @click.stop="
-															selectedQuestionId =
-															selectedQuestionId === question.id ? '' : question.id
-															">{{
-															selectedQuestionId === question.id ? '收起操作' : '主持操作'
-														}}</button>
-													</div>
-													<div v-if="canHost && !question.clientStatus && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
+															<button v-if="canHost && !question.clientStatus" class="host-operate-button" type="button"
+																@click.stop="openHostAction(question)">{{
+																	!isMobile && selectedQuestionId === question.id ? '收起操作' : '主持操作'
+																}}</button>
+														</div>
+														<div v-if="!isMobile && canHost && !question.clientStatus && selectedQuestionId === question.id" class="host-action-panel" @click.stop>
 														<div class="host-action-heading">
 															<strong>主持人操作</strong>
 															<small>判定回答、标记线索，并记录本轮积分依据</small>
@@ -4494,4 +4614,3 @@ function formatTime(time: string) {
 		</main>
 	</el-config-provider>
 </template>
-
