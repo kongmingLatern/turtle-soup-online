@@ -33,6 +33,7 @@ const elementPlusComponentDirs: Record<string, string> = {
 	ElTag: 'tag',
 	ElTooltip: 'tooltip',
 	ElUpload: 'upload',
+	ElSpace: 'space',
 }
 
 function ElementPlusDirectResolver() {
@@ -68,7 +69,10 @@ export default defineConfig({
 					if (!id.includes('node_modules')) return undefined
 					if (id.includes('/element-plus/')) return 'element-plus'
 					if (id.includes('/@element-plus/icons-vue/')) return 'element-icons'
-					if (id.includes('/socket.io-client/') || id.includes('/engine.io-client/')) {
+					if (
+						id.includes('/socket.io-client/') ||
+						id.includes('/engine.io-client/')
+					) {
 						return 'socket-vendor'
 					}
 					return 'vendor'
@@ -80,7 +84,8 @@ export default defineConfig({
 		port: 5555,
 		proxy: {
 			'^/api': {
-				target: 'http://localhost:3001/api', // 将要代理的目标地址
+				target: 'http://124.222.187.70:3001/api', // 将要代理的目标地址
+				// target: 'http://124.222.187.70:3001/api', // 将要代理的目标地址
 				changeOrigin: true, // 是否改变源地址
 				rewrite: path => path.replace('/api', ''),
 			},
