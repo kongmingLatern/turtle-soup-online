@@ -740,7 +740,7 @@ textarea {
   -webkit-overflow-scrolling: touch;
 }
 
-.timeline > :first-child {
+.timeline> :first-child {
   margin-top: auto;
 }
 
@@ -1294,10 +1294,15 @@ textarea {
   margin-left: 0;
 }
 
+.thought-reference-fab-wrap {
+  position: fixed;
+  right: 10px;
+  bottom: 50px;
+  z-index: 9999;
+}
+
 .thought-reference-fab {
-  position: absolute;
-  right: 20px;
-  bottom: 20px;
+  position: static;
   z-index: 40;
   display: inline-flex;
   width: 46px;
@@ -3672,27 +3677,25 @@ canvas.readonly {
   }
 
   .qa-column {
-    position: sticky;
-    top: calc(142px + env(safe-area-inset-top));
+    position: static;
     z-index: 6;
-    height: calc(100dvh - 226px);
-    min-height: 360px;
+    height: auto;
+    min-height: min(520px, calc(100dvh - 176px));
     max-height: none;
-    overflow: hidden;
-    scroll-margin-top: 142px;
+    overflow: visible;
+    scroll-margin-top: calc(142px + env(safe-area-inset-top));
   }
 
   .qa-column .timeline {
-    flex: 1 1 0;
+    flex: 0 0 auto;
     min-height: 0;
     max-height: none;
-    padding-bottom: 86px;
-    overflow-x: hidden;
-    overflow-y: auto;
+    padding-bottom: 16px;
+    overflow: visible;
     touch-action: pan-y;
   }
 
-  .qa-column .timeline > :first-child {
+  .qa-column .timeline> :first-child {
     margin-top: 0;
   }
 
@@ -3703,7 +3706,7 @@ canvas.readonly {
   }
 
   .qa-filter-tabs .el-tabs__nav-scroll {
-    overflow-x: auto;
+    overflow-x: hidden;
   }
 
   .qa-filter-tabs .el-tabs__item {
@@ -3799,10 +3802,15 @@ canvas.readonly {
   }
 
   .thought-reference-fab {
-    right: 14px;
-    bottom: calc(14px + env(safe-area-inset-bottom));
     width: 44px;
     height: 44px;
+  }
+
+  .thought-reference-fab-wrap {
+    top: 50%;
+    right: 12px;
+    bottom: auto;
+    transform: translateY(-50%);
   }
 
   .thought-canvas-wrap {
@@ -3923,6 +3931,7 @@ canvas.readonly {
   }
 
   .mobile-sticky-ask {
+    grid-template-columns: minmax(0, 1fr) 76px;
     padding: 0;
   }
 
@@ -4144,23 +4153,42 @@ canvas.readonly {
   }
 
   .floating-tools {
-    right: 50%;
-    top: auto;
-    bottom: calc(12px + env(safe-area-inset-bottom));
-    grid-auto-columns: 54px;
+    right: 18px;
+    top: calc(22px + env(safe-area-inset-top));
+    bottom: auto;
+    z-index: 25;
+    grid-auto-columns: 40px;
     grid-auto-flow: column;
     grid-template-columns: none;
-    transform: translateX(50%);
+    gap: 7px;
+    padding: 6px;
+    border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--bg) 70%, transparent);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+    backdrop-filter: blur(18px) saturate(1.06);
+    transform: none;
   }
 
   .float-tool {
-    width: 54px;
-    height: 54px;
-    border-radius: 18px;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    box-shadow: none;
+  }
+
+  .float-tool:hover,
+  .float-tool.active {
+    transform: none;
+  }
+
+  .float-tool svg {
+    width: 20px;
+    height: 20px;
   }
 
   .tool-popover {
-    inset: auto 10px calc(78px + env(safe-area-inset-bottom));
+    inset: calc(78px + env(safe-area-inset-top)) 10px auto;
     width: auto;
     max-height: min(70dvh, 620px);
     transform: none;

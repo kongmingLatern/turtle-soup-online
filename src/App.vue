@@ -3332,7 +3332,7 @@ function formatTime(time: string) {
 					<span v-if="room" class="online-count">{{memberStats.filter(member => member.online).length}} 人在线</span>
 					<el-button :icon="Share" :disabled="!room" @click="copyShareUrl">邀请</el-button>
 					<el-button :icon="isDark ? Sunny : Moon" circle @click="isDark = !isDark" />
-					<el-button v-if="user" text type="danger" @click="logout()">退出</el-button>
+					<el-button v-if="user" text type="danger" @click="logout()">退出登录</el-button>
 				</div>
 			</header>
 
@@ -4041,31 +4041,31 @@ function formatTime(time: string) {
 						<el-button @click="mobileHostActionOpen = false">关闭</el-button>
 					</template>
 				</el-dialog>
-				<Teleport to="body">
-					<div v-if="isMobile" class="qa-mobile-dock">
-					<div v-if="mobileRecentMyQuestions.length"
-						:class="['mobile-my-questions', { collapsed: !mobileAskExpanded }]">
-						<button class="mobile-ask-toggle" type="button" @click="mobileAskExpanded = !mobileAskExpanded">
-							<span>我的提问</span>
-							<b>{{ mobileAskExpanded ? '收起' : '展开' }}</b>
-						</button>
-						<div v-show="mobileAskExpanded" class="mobile-my-question-list">
-							<button v-for="question in mobileRecentMyQuestions" :key="question.id" type="button"
-								class="mobile-my-question" @click="revealQuestion(question.id)">
-								<span class="mobile-my-question-text">{{ question.text }}</span>
-								<span class="mobile-my-question-state">{{
-									question.verdict ? verdictLabels[question.verdict] : '待判定'
-								}}</span>
-							</button>
+					<Teleport to="body">
+						<div v-if="isMobile" class="qa-mobile-dock">
+							<div v-if="mobileRecentMyQuestions.length"
+								:class="['mobile-my-questions', { collapsed: !mobileAskExpanded }]">
+								<button class="mobile-ask-toggle" type="button" @click="mobileAskExpanded = !mobileAskExpanded">
+									<span>我的提问</span>
+									<b>{{ mobileAskExpanded ? '收起' : '展开' }}</b>
+								</button>
+								<div v-show="mobileAskExpanded" class="mobile-my-question-list">
+									<button v-for="question in mobileRecentMyQuestions" :key="question.id" type="button"
+										class="mobile-my-question" @click="revealQuestion(question.id)">
+										<span class="mobile-my-question-text">{{ question.text }}</span>
+										<span class="mobile-my-question-state">{{
+											question.verdict ? verdictLabels[question.verdict] : '待判定'
+										}}</span>
+									</button>
+								</div>
+							</div>
+							<div class="ask-row mobile-sticky-ask">
+								<el-input ref="questionInputRef" v-model="questionText" size="large" placeholder="输入问题，例如：这个人认识厨师吗？"
+									:disabled="!user || !room" @keyup.enter="addQuestion" /><el-button type="primary" size="large"
+									:icon="Right" :loading="sendingQuestion" :disabled="!user || !room" @click="addQuestion">发送</el-button>
+							</div>
 						</div>
-					</div>
-					<div class="ask-row mobile-sticky-ask">
-						<el-input ref="questionInputRef" v-model="questionText" size="large" placeholder="输入问题，例如：这个人认识厨师吗？"
-							:disabled="!user || !room" @keyup.enter="addQuestion" /><el-button type="primary" size="large"
-							:icon="Right" :loading="sendingQuestion" :disabled="!user || !room" @click="addQuestion">发送</el-button>
-					</div>
-				</div>
-			</Teleport>
+					</Teleport>
 			<el-drawer v-model="soupManagerOpen" :direction="soupDrawerDirection" :size="isMobile ? '78%' : '420px'"
 				class="soup-manager-drawer" title="我的题库">
 				<div class="soup-manager">
@@ -4249,14 +4249,9 @@ function formatTime(time: string) {
 							</article>
 						</div>
 					</div>
-					<div style="position: fixed;right: 10px;bottom: 50px;z-index: 9999">
-						<!-- <el-popover title="Title" content="Top Center prompts info" placement="top" class="cutsom-popover">
-							<template #reference>
-								<el-button>top</el-button>
-							</template>
-						</el-popover> -->
-						<el-popover class="popover" width="min(340px, calc(100vw - 28px))" placement="top-end" trigger="click"
-							popper-class="thought-reference-popper">
+					<div class="thought-reference-fab-wrap">
+							<el-popover class="popover" width="min(340px, calc(100vw - 28px))" :placement="isMobile ? 'left' : 'top-end'"
+								trigger="click" popper-class="thought-reference-popper">
 							<template #reference>
 								<button class="thought-reference-fab" type="button" aria-label="打开汤面汤底">
 									<InfoFilled />
