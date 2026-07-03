@@ -238,6 +238,7 @@ const roomConfigOpen = ref(false)
 const answerPanelOpen = ref(false)
 const clueManagerOpen = ref(false)
 const revealSummaryOpen = ref(false)
+const autoOpenedRevealKey = ref('')
 const revealConfirmOpen = ref(false)
 const answerDraft = ref('')
 const storyEditorOpen = ref(false)
@@ -477,9 +478,16 @@ watch(
 )
 
 watch(
-	() => [props.room?.code, props.room?.revealed, props.settlement?.revealedAt, currentMvpResult.value?.selectedAt],
-	([, revealed]) => {
-		if (revealed) revealSummaryOpen.value = true
+	() => [props.room?.code, props.room?.revealed, props.settlement?.revealedAt],
+	([code, revealed, revealedAt]) => {
+		if (!code || !revealed) {
+			revealSummaryOpen.value = false
+			autoOpenedRevealKey.value = ''
+			return
+		}
+		if (autoOpenedRevealKey.value) return
+		autoOpenedRevealKey.value = `${code}:${revealedAt ?? 'revealed'}`
+		revealSummaryOpen.value = true
 	},
 )
 

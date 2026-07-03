@@ -693,10 +693,11 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 	let canvasSaveTimer: number | undefined
 	let canvasPreviewTimer: number | undefined
 	let roomSaveTimer: number | undefined
-	let mobileMediaQuery: MediaQueryList | null = null
-	let syncingAmbience = false
-	let ambienceDirty = false
-	const presenceNotifyAt = new Map<string, number>()
+		let mobileMediaQuery: MediaQueryList | null = null
+		let syncingAmbience = false
+		let ambienceDirty = false
+		let lastRoundResetAt = 0
+		const presenceNotifyAt = new Map<string, number>()
 	const roomAmbienceCache = new Map<string, RoomAmbience>()
 	const questionSortTimes = new Map<string, number>()
 	const avatarCache = loadAvatarCache()
@@ -1863,8 +1864,15 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 
 	function resetRoundState(nextRoom?: RoomState) {
 		const previousRoomCode = room.value?.code
+		lastRoundResetAt = Date.now()
 		if (nextRoom) room.value = hydrateRoom(nextRoom)
-		if (room.value) room.value.questions = []
+		if (room.value) {
+			room.value.questions = []
+			room.value.revealed = false
+			room.value.solved = false
+			room.value.settlement = undefined
+			room.value.mvp = null
+		}
 		questionSortTimes.clear()
 		removedQuestionIds.clear()
 		questionText.value = ''
@@ -2829,16 +2837,23 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 				roomMembers.value = []
 			})
 			socket.on('room-updated', (nextRoom: RoomState) => {
-				if (nextRoom.code !== room.value?.code) return
+				const currentRoom = room.value
+				if (nextRoom.code !== currentRoom?.code) return
+				if (
+					nextRoom.revealed &&
+					!currentRoom.revealed &&
+					currentRoom.answer &&
+					sanitizeRichText(currentRoom.answer) !== sanitizeRichText(nextRoom.answer)
+				) {
+					return
+				}
 				const hydratedRoom = mergeRoomWithLocalQuestions(nextRoom)
 				room.value = hydratedRoom
 				selectedRole.value = canHost.value ? 'host' : 'player'
 				syncAmbienceFromRoom(hydratedRoom)
 				syncSelectedSoupFromRoom(hydratedRoom)
-				if (hydratedRoom.settlement)
-					settlement.value = hydrateSettlement(hydratedRoom.settlement)
-				if (hydratedRoom.mvp)
-					mvpResult.value = hydrateMvpResult(hydratedRoom.mvp)
+				settlement.value = hydrateSettlement(hydratedRoom.settlement)
+				mvpResult.value = hydrateMvpResult(hydratedRoom.mvp)
 				nextTick(() => restoreCanvas())
 			})
 			socket.on(
@@ -2890,6 +2905,22 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 				},
 			)
 			socket.on('room-revealed', (nextSettlement: Settlement) => {
+				if (nextSettlement.roomCode !== room.value?.code) return
+				const revealedAt = new Date(nextSettlement.revealedAt).getTime()
+				if (
+					Number.isFinite(revealedAt) &&
+					lastRoundResetAt &&
+					revealedAt < lastRoundResetAt
+				) {
+					return
+				}
+				if (
+					room.value?.answer &&
+					sanitizeRichText(room.value.answer) !==
+						sanitizeRichText(nextSettlement.answer)
+				) {
+					return
+				}
 				const hydratedSettlement = hydrateSettlement(nextSettlement)
 				settlement.value = hydratedSettlement
 				settlementDialogOpen.value = true
