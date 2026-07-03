@@ -1300,7 +1300,19 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 	function mergeRoomWithLocalQuestions(data: RoomState): RoomState {
 		const nextRoom = hydrateRoom(data)
 		if (!room.value || room.value.code !== nextRoom.code) return nextRoom
-		const byId = new Map(nextRoom.questions.map(question => [question.id, question]))
+		const localById = new Map(
+			room.value.questions.map(question => [question.id, question]),
+		)
+		const byId = new Map(
+			nextRoom.questions.map(question => {
+				const localQuestion = localById.get(question.id)
+				if (localQuestion?.clientKey) question.clientKey = localQuestion.clientKey
+				if (localQuestion?.clientSortAt) {
+					question.clientSortAt = localQuestion.clientSortAt
+				}
+				return [question.id, question]
+			}),
+		)
 		room.value.questions.forEach(question => {
 			if (removedQuestionIds.has(question.id) || byId.has(question.id)) return
 			byId.set(question.id, question)
@@ -1396,6 +1408,10 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			item => item.id === nextQuestion.id,
 		)
 		if (nextExistingIndex >= 0) {
+			const existingQuestion = room.value.questions[nextExistingIndex]
+			nextQuestion.clientKey = nextQuestion.clientKey ?? existingQuestion.clientKey
+			nextQuestion.clientSortAt =
+				nextQuestion.clientSortAt ?? existingQuestion.clientSortAt
 			room.value.questions.splice(nextExistingIndex, 1, nextQuestion)
 			getQuestionSortTime(nextQuestion)
 			return
@@ -2555,6 +2571,10 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			item => item.id === nextQuestion.id,
 		)
 		if (index >= 0) {
+			const existingQuestion = room.value.questions[index]
+			nextQuestion.clientKey = nextQuestion.clientKey ?? existingQuestion.clientKey
+			nextQuestion.clientSortAt =
+				nextQuestion.clientSortAt ?? existingQuestion.clientSortAt
 			room.value.questions.splice(index, 1, nextQuestion)
 		} else {
 			room.value.questions.unshift(nextQuestion)
@@ -2923,13 +2943,13 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		if (!text) return ElMessage.warning('请输入问题')
 		if (text.length > 500) return ElMessage.warning('问题不能超过 500 个字符')
 		if (sendingQuestion.value) return
+		sendingQuestion.value = true
 		const pendingQuestion = createPendingQuestion(text)
 		upsertQuestion(pendingQuestion)
 		questionText.value = ''
 		if (isMobile.value) mobileAskExpanded.value = true
 		await nextTick()
 		questionInputRef.value?.focus?.()
-		sendingQuestion.value = true
 		try {
 			const response = await request<Question | QuestionMutationResponse>(
 				`/rooms/${room.value.code}/questions`,
