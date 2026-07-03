@@ -153,7 +153,10 @@ function getQuestionSignalTags(question: Question) {
 				<span v-else>{{ question.author.displayName.slice(0, 1) }}</span>
 			</div>
 			<el-space direction="vertical" :size="5" alignment="normal"> 
-				<header class="text-12px flex items-end justify-end gap-5px">
+				<header 
+				:class="question.author.id === user?.id ? ['text-12px', 'flex', 'items-end', 'justify-end', 'gap-5px'] :
+				['text-12px', 'flex', 'items-end', 'justify-start', 'gap-5px']"
+				>
 					<strong>{{ question.author.displayName }}</strong>
 					<time text-10px color="#666">{{ formatTime(question.createdAt) }}</time>
 				</header>
@@ -198,7 +201,7 @@ function getQuestionSignalTags(question: Question) {
 
 .chat-message {
 	display: flex;
-	align-items: flex-end;
+	// align-items: flex-end;
 	gap: 10px;
 	width: min(78%, 560px);
 	cursor: pointer;
@@ -340,8 +343,10 @@ function getQuestionSignalTags(question: Question) {
 
 .chat-verdict {
 	position: absolute;
-	right: 8px;
-	top: -9px;
+	right: -30px;
+	top: 0;
+	// right: 8px;
+	// top: -9px;
 	min-width: 52px;
 	height: 24px;
 	padding: 0 6px;
@@ -356,7 +361,8 @@ function getQuestionSignalTags(question: Question) {
 
 .mine .chat-verdict {
 	right: -23px;
-	top: 5px;
+	bottom: 5px;
+	top: unset;
 	// left: 8px;
 }
 

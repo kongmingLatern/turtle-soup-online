@@ -6,11 +6,7 @@ import {
 	Flag,
 	House,
 	Lock,
-	Moon,
-	QuestionFilled,
 	Right,
-	Share,
-	Sunny,
 	SwitchButton,
 	User,
 	VideoPlay,
@@ -60,6 +56,7 @@ interface RoomState {
 	answer?: string
 	revealed: boolean
 	solved?: boolean
+	mvp?: MvpResult | null
 	host: AuthUser
 	questions: Question[]
 	updatedAt?: string
@@ -101,6 +98,26 @@ interface LeaderboardEntry {
 	total: number
 }
 
+interface SettlementEntry {
+	rank: number
+	user: AuthUser
+	total: number
+	breakdown: Record<string, number>
+}
+
+interface Settlement {
+	roomCode: string
+	revealedAt: string
+	answer: string
+	entries: SettlementEntry[]
+}
+
+interface MvpResult {
+	selectedAt: string
+	user: AuthUser
+	importantQuestions: Question[]
+}
+
 const props = withDefaults(
 	defineProps<{
 		room?: RoomState | null
@@ -118,6 +135,11 @@ const props = withDefaults(
 		roomCodeInput?: string
 		soups?: Soup[]
 		selectedSoupId?: string
+		settlement?: Settlement | null
+		mvpResult?: MvpResult | null
+		mvpCandidates?: AuthUser[]
+		selectedMvpUserId?: string
+		mvpSubmitting?: boolean
 		authSubmitting?: boolean
 		creatingSoup?: boolean
 		deletingSoupId?: string
@@ -138,6 +160,11 @@ const props = withDefaults(
 		roomCodeInput: '',
 		soups: () => [],
 		selectedSoupId: '',
+		settlement: null,
+		mvpResult: null,
+		mvpCandidates: () => [],
+		selectedMvpUserId: '',
+		mvpSubmitting: false,
 		authSubmitting: false,
 		creatingSoup: false,
 		deletingSoupId: '',
@@ -172,6 +199,8 @@ const emit = defineEmits<{
 		},
 	): void
 	(event: 'select-soup-id', value: string): void
+	(event: 'select-mvp-user', value: string): void
+	(event: 'submit-mvp-selection'): void
 	(event: 'save-soup', payload: SoupPayload, soupId?: string): void
 	(event: 'delete-soup', soup: Soup): void
 	(event: 'create-room'): void
@@ -205,7 +234,7 @@ const commandPanelTop = ref(66)
 const roomConfigOpen = ref(false)
 const answerPanelOpen = ref(false)
 const clueManagerOpen = ref(false)
-const helpPanelOpen = ref(false)
+const revealSummaryOpen = ref(false)
 const revealConfirmOpen = ref(false)
 const answerDraft = ref('')
 const storyEditorOpen = ref(false)
@@ -347,6 +376,13 @@ const storyHtml = computed(() =>
 )
 const canAsk = computed(() => Boolean(props.user && props.room && !props.sendingQuestion))
 const canControl = computed(() => Boolean(props.canHost && props.room))
+const canViewAnswer = computed(() =>
+	Boolean(props.room && (props.canHost || props.room.revealed)),
+)
+const revealedAnswerHtml = computed(() =>
+	sanitizeRichText(props.room?.answer || props.settlement?.answer || ''),
+)
+const currentMvpResult = computed(() => props.mvpResult ?? props.room?.mvp ?? null)
 const selectedSoup = computed(
 	() => props.soups.find(soup => soup.id === props.selectedSoupId) ?? null,
 )
@@ -510,6 +546,13 @@ watch(
 )
 
 watch(
+	() => [props.room?.code, props.room?.revealed, props.settlement?.revealedAt, currentMvpResult.value?.selectedAt],
+	([, revealed]) => {
+		if (revealed) revealSummaryOpen.value = true
+	},
+)
+
+watch(
 	() => displayQuestions.value.map(getQuestionRenderKey),
 	questionKeys => {
 		const previousKeys = previousQuestionKeys.value
@@ -648,7 +691,7 @@ function handleDocumentPointerDown(event: PointerEvent) {
 	if (!activeHostQuestionId.value) return
 	const target = event.target as HTMLElement | null
 	if (!target) return
-	if (target.closest('.question-card, .qa-command-panel')) return
+	if (target.closest('.question-card, .chat-message, .qa-command-panel')) return
 	closeHostPanel()
 }
 
@@ -676,8 +719,8 @@ function updateRoomField(field: 'title' | 'surface' | 'answer', value: string) {
 }
 
 function openAnswerPanel() {
-	if (!props.canHost || !props.room) return
-	answerDraft.value = props.room.answer ?? ''
+	if (!canViewAnswer.value) return
+	answerDraft.value = props.room?.answer || props.settlement?.answer || ''
 	answerPanelOpen.value = true
 }
 
@@ -699,14 +742,6 @@ function openClueManager() {
 
 function closeClueManager() {
 	clueManagerOpen.value = false
-}
-
-function openHelpPanel() {
-	helpPanelOpen.value = true
-}
-
-function closeHelpPanel() {
-	helpPanelOpen.value = false
 }
 
 function openRevealConfirm() {
@@ -875,7 +910,7 @@ onBeforeUnmount(() => {
 				</section>
 
 				<nav class="top-actions" aria-label="大屏操作">
-					<button type="button" :disabled="!room" @click="emit('copy-share-url')">
+					<!-- <button type="button" :disabled="!room" @click="emit('copy-share-url')">
 						<el-icon><Share /></el-icon>
 						<span>公告</span>
 					</button>
@@ -889,7 +924,7 @@ onBeforeUnmount(() => {
 							<Moon v-else />
 						</el-icon>
 						<span>{{ isDark ? '亮色' : '暗色' }}</span>
-					</button>
+					</button> -->
 					<button type="button" :disabled="!user" @click="emit('logout')">
 						<el-icon><SwitchButton /></el-icon>
 						<span>退出登录</span>
@@ -936,7 +971,7 @@ onBeforeUnmount(() => {
 						<div class="panel-title yellow">
 							<h2>关键线索</h2>
 							<span>CLUES</span>
-							<small>主持人可见</small>
+							<!-- <small>主持人可见</small> -->
 						</div>
 						<div class="clue-list">
 							<div
@@ -980,7 +1015,7 @@ onBeforeUnmount(() => {
 
 				<section class="center-column panel qa-panel">
 					<div class="panel-title yellow live-title">
-						<div>
+						<div flex items-end gap="2px">
 							<h2>实时问答</h2>
 							<span>Q&amp;A</span>
 						</div>
@@ -1262,9 +1297,9 @@ onBeforeUnmount(() => {
 							<span>HOST CONTROL</span>
 						</div>
 						<div class="host-actions">
-							<button type="button" :disabled="!canControl" @click="openAnswerPanel">
+							<button type="button" :disabled="!canViewAnswer" @click="openAnswerPanel">
 								<el-icon><Lock /></el-icon>
-								<span>{{ room?.revealed ? '查看汤底' : '汤底管理' }}</span>
+								<span>{{ room?.revealed && !canHost ? '查看汤底' : room?.revealed ? '查看汤底' : '汤底管理' }}</span>
 							</button>
 							<button type="button" :disabled="!canControl" @click="openClueManager">
 								<el-icon><Flag /></el-icon>
@@ -1331,46 +1366,13 @@ onBeforeUnmount(() => {
 				</section>
 			</footer>
 			<Transition name="zzz-modal">
-			<div v-if="helpPanelOpen" class="big-modal">
-				<section class="modal-panel help-panel">
-					<header>
-						<div>
-							<strong>
-								<el-icon><QuestionFilled /></el-icon>
-								大屏帮助
-							</strong>
-							<span>HELP</span>
-						</div>
-						<button type="button" @click="closeHelpPanel">×</button>
-					</header>
-					<div class="help-grid">
-						<article>
-							<strong>创建房间</strong>
-							<p>先登录账号，进入房间配置，新建或选择汤面后创建房间。</p>
-						</article>
-						<article>
-							<strong>玩家提问</strong>
-							<p>玩家加入房间后可在底部输入问题，主持人可在问答流中判定。</p>
-						</article>
-						<article>
-							<strong>线索管理</strong>
-							<p>进入房间后可打开线索管理，统一标记重要问题和判定结果。</p>
-						</article>
-					</div>
-					<footer>
-						<button type="button" @click="closeHelpPanel">知道了</button>
-					</footer>
-				</section>
-			</div>
-			</Transition>
-			<Transition name="zzz-modal">
 			<div v-if="answerPanelOpen" class="big-modal">
 				<section class="modal-panel">
 					<header>
 						<div>
 							<strong>
 								<el-icon><Lock /></el-icon>
-								汤底管理
+								{{ canHost && !room?.revealed ? '汤底管理' : '查看汤底' }}
 							</strong>
 							<span>{{ room?.revealed ? 'ANSWER REVEALED' : 'HOST ONLY' }}</span>
 						</div>
@@ -1384,11 +1386,86 @@ onBeforeUnmount(() => {
 						v-model="answerDraft"
 						class="answer-rich-editor"
 						:min-rows="10"
+						:disabled="!canHost || room?.revealed"
 						placeholder="写下最终真相、关键线索和解释"
 					/>
 					<footer>
-						<button type="button" @click="closeAnswerPanel">取消</button>
-						<button type="button" @click="saveAnswerPanel">保存汤底</button>
+						<button type="button" @click="closeAnswerPanel">{{ canHost && !room?.revealed ? '取消' : '关闭' }}</button>
+						<button v-if="canHost && !room?.revealed" type="button" @click="saveAnswerPanel">保存汤底</button>
+					</footer>
+				</section>
+			</div>
+			</Transition>
+			<Transition name="zzz-modal">
+			<div v-if="revealSummaryOpen && room?.revealed" class="big-modal">
+				<section class="modal-panel reveal-summary-panel">
+					<header>
+						<div>
+							<strong>
+								<el-icon><CircleClose /></el-icon>
+								本局揭秘
+							</strong>
+							<span>FINAL RESULT</span>
+						</div>
+						<button type="button" @click="revealSummaryOpen = false">×</button>
+					</header>
+					<div class="reveal-summary-body">
+						<section class="result-answer-card">
+							<div class="result-section-title">
+								<strong>汤底</strong>
+								<span>{{ room.code }}</span>
+							</div>
+							<div class="result-answer-rich" v-html="revealedAnswerHtml" />
+						</section>
+						<section class="result-rank-card">
+							<div class="result-section-title">
+								<strong>本局积分</strong>
+								<span>{{ settlement?.entries.length ?? 0 }} 人</span>
+							</div>
+							<div v-if="settlement?.entries.length" class="result-rank-list">
+								<div v-for="entry in settlement.entries" :key="entry.user.id" class="result-rank-row">
+									<b>#{{ entry.rank }}</b>
+									<span>{{ entry.user.displayName }}</span>
+									<strong>+{{ entry.total }}</strong>
+								</div>
+							</div>
+							<div v-else class="empty-state">等待结算数据</div>
+						</section>
+						<section class="result-mvp-card">
+							<div class="result-section-title">
+								<strong>本轮 MVP</strong>
+								<span>MVP</span>
+							</div>
+							<div v-if="currentMvpResult" class="result-mvp-hero">
+								<div class="result-mvp-avatar">
+									<img v-if="currentMvpResult.user.avatarDataUrl" :src="currentMvpResult.user.avatarDataUrl" alt="" />
+									<span v-else>{{ currentMvpResult.user.displayName.slice(0, 1) }}</span>
+								</div>
+								<div>
+									<strong>{{ currentMvpResult.user.displayName }}</strong>
+									<p>{{ currentMvpResult.user.rankTitle }} · {{ currentMvpResult.user.points }} 分</p>
+								</div>
+							</div>
+							<div v-else-if="canHost && mvpCandidates.length" class="mvp-select-console">
+								<select
+									:value="selectedMvpUserId"
+									@change="emit('select-mvp-user', ($event.target as HTMLSelectElement).value)"
+								>
+									<option value="">选择 MVP 玩家</option>
+									<option v-for="candidate in mvpCandidates" :key="candidate.id" :value="candidate.id">
+										{{ candidate.displayName }} · {{ candidate.rankTitle }}
+									</option>
+								</select>
+								<button type="button" :disabled="!selectedMvpUserId || mvpSubmitting" @click="emit('submit-mvp-selection')">
+									{{ mvpSubmitting ? '公布中' : '公布 MVP' }}
+								</button>
+							</div>
+							<div v-else class="empty-state">等待主持人公布 MVP</div>
+						</section>
+					</div>
+					<footer>
+						<button type="button" @click="revealSummaryOpen = false">关闭</button>
+						<!-- <button type="button" @click="openAnswerPanel">查看汤底</button> -->
 					</footer>
 				</section>
 			</div>
@@ -1800,7 +1877,7 @@ input:disabled {
 	display: grid;
 	grid-template-columns: 450px 1fr 360px;
 	align-items: stretch;
-	height: 92px;
+	height: 100px;
 	padding: 16px 28px 10px;
 	background: linear-gradient(90deg, rgba(0, 0, 0, 0.82), rgba(14, 18, 18, 0.72));
 	border-bottom: 2px solid rgba(255, 255, 255, 0.08);
@@ -1883,9 +1960,12 @@ button.meta-chip {
 }
 
 .top-actions {
-	display: grid;
-	grid-template-columns: repeat(4, 1fr);
-	align-self: stretch;
+	// display: grid;
+	// grid-template-columns: repeat(4, 1fr);
+	// align-self: stretch;
+	display: flex;
+	justify-content: end;
+	align-items: center;
 	background: rgba(5, 6, 7, 0.38);
 }
 
@@ -1898,6 +1978,7 @@ button.meta-chip {
 	background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.01));
 	color: #e9e9e4;
 	font-size: 13px;
+	padding: 10px;
 }
 
 .top-actions .el-icon {
@@ -1956,10 +2037,10 @@ button.meta-chip {
 	position: relative;
 	z-index: 1;
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	gap: 10px;
-	height: 54px;
-	padding: 9px 18px 8px 28px;
+	// height: 54px;
+	padding: 9px 18px 10px 28px;
 	background: linear-gradient(90deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.02));
 	border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -2979,6 +3060,143 @@ button.meta-chip {
 
 .reveal-confirm-panel {
 	width: 560px;
+}
+
+.reveal-summary-panel {
+	display: flex;
+	width: min(980px, calc(100vw - 80px));
+	max-height: min(860px, calc(100vh - 72px));
+	flex-direction: column;
+}
+
+.reveal-summary-body {
+	display: grid;
+	min-height: 0;
+	grid-template-columns: minmax(0, 1.15fr) minmax(280px, 0.85fr);
+	gap: 12px;
+	overflow: auto;
+	padding: 16px 18px;
+}
+
+.result-answer-card,
+.result-rank-card,
+.result-mvp-card {
+	min-width: 0;
+	padding: 14px;
+	background: rgba(0, 0, 0, 0.34);
+	border: 1px solid rgba(255, 255, 255, 0.12);
+	font-family: 'Microsoft YaHei', Arial, sans-serif;
+}
+
+.result-answer-card {
+	grid-row: span 2;
+}
+
+.result-section-title {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 10px;
+	color: #ffd400;
+	font-weight: 950;
+}
+
+.result-section-title span {
+	color: #8f8f88;
+	font-size: 12px;
+}
+
+.result-answer-rich {
+	max-height: 520px;
+	overflow: auto;
+	color: #f2f2ed;
+	font-size: 16px;
+	font-weight: 700;
+	line-height: 1.7;
+}
+
+.result-rank-list {
+	display: grid;
+	gap: 8px;
+}
+
+.result-rank-row {
+	display: grid;
+	grid-template-columns: 44px minmax(0, 1fr) auto;
+	gap: 8px;
+	align-items: center;
+	color: #f2f2ed;
+}
+
+.result-rank-row b {
+	color: #ffd400;
+}
+
+.result-rank-row span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.result-rank-row strong {
+	color: #34efe1;
+}
+
+.result-mvp-hero {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.result-mvp-avatar {
+	display: grid;
+	width: 52px;
+	height: 52px;
+	place-items: center;
+	overflow: hidden;
+	color: #111;
+	background: #ffd400;
+	border-radius: 50%;
+	font-size: 22px;
+	font-weight: 950;
+}
+
+.result-mvp-avatar img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.result-mvp-hero p {
+	margin: 4px 0 0;
+	color: #aaa69c;
+}
+
+.mvp-select-console {
+	display: grid;
+	gap: 10px;
+}
+
+.mvp-select-console select,
+.mvp-select-console button {
+	height: 34px;
+	color: #f5f5ef;
+	background: rgba(0, 0, 0, 0.46);
+	border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.mvp-select-console button {
+	color: #111;
+	background: #ffd400;
+	border-color: #ffd400;
+	font-weight: 950;
+}
+
+.mvp-select-console button:disabled {
+	cursor: not-allowed;
+	opacity: 0.55;
 }
 
 .answer-state,

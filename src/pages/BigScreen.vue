@@ -17,6 +17,9 @@ const {
 	liveLeaderboard,
 	logout,
 	memberStats,
+	mvpCandidates,
+	mvpResult,
+	mvpSubmitting,
 	openMemberImportant,
 	openRoomSetup,
 	pendingQuestions,
@@ -28,11 +31,14 @@ const {
 	saveRoom,
 	saveSoupFromBigScreen,
 	selectedSoupId,
+	selectedMvpUserId,
 	sendingQuestion,
 	setVerdict,
+	settlement,
 	soupHistory,
 	soups,
 	submitAuthFromBigScreen,
+	submitMvpSelection,
 	submitQuestionFromBigScreen,
 	surfaceViewMode,
 	switchRoomSoup,
@@ -60,6 +66,11 @@ const {
 		:room-code-input="roomCodeInput"
 		:soups="soups"
 		:selected-soup-id="selectedSoupId"
+		:settlement="settlement"
+		:mvp-result="mvpResult"
+		:mvp-candidates="mvpCandidates"
+		:selected-mvp-user-id="selectedMvpUserId"
+		:mvp-submitting="mvpSubmitting"
 		:auth-submitting="authSubmitting"
 		:creating-soup="creatingSoup"
 		:deleting-soup-id="deletingSoupId"
@@ -81,6 +92,8 @@ const {
 		@open-member-important="openMemberImportant"
 		@submit-auth="submitAuthFromBigScreen"
 		@select-soup-id="value => (selectedSoupId = value)"
+		@select-mvp-user="value => (selectedMvpUserId = value)"
+		@submit-mvp-selection="submitMvpSelection"
 		@save-soup="saveSoupFromBigScreen"
 		@delete-soup="deleteSoup"
 		@create-room="createRoom"
