@@ -1,5 +1,13 @@
 import type { FormInstance, FormRules } from 'element-plus'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import {
+	computed,
+	nextTick,
+	onBeforeUnmount,
+	onMounted,
+	reactive,
+	ref,
+	watch,
+} from 'vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { io, Socket } from 'socket.io-client'
 import { richTextToPlainText, sanitizeRichText } from '@/utils/richText'
@@ -42,6 +50,14 @@ interface Soup {
 	category: string
 	difficulty: Difficulty
 	isBuiltin: boolean
+}
+
+interface SoupPayload {
+	title: string
+	surface: string
+	answer: string
+	category: string
+	difficulty: Difficulty
 }
 
 interface Question {
@@ -265,7 +281,8 @@ interface QuestionRemoveResponse {
 type QuestionPatchResponse = Question | QuestionMutationResponse | RoomState
 type QuestionDeleteResponse = QuestionRemoveResponse | RoomState
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://124.222.187.70:3001'
+const API_BASE =
+	import.meta.env.VITE_API_BASE_URL || 'http://124.222.187.70:3001'
 const STORAGE_TOKEN = 'turtle-soup:token'
 const STORAGE_AVATAR_CACHE = 'turtle-soup:avatar-cache'
 const STORAGE_THEME = 'turtle-soup:theme'
@@ -326,12 +343,12 @@ const verdictLabels: Record<Verdict, string> = {
 }
 
 const verdictTypes: Record<Verdict, 'success' | 'danger' | 'warning' | 'info'> =
-{
-	yes: 'success',
-	no: 'danger',
-	both: 'warning',
-	irrelevant: 'info',
-}
+	{
+		yes: 'success',
+		no: 'danger',
+		both: 'warning',
+		irrelevant: 'info',
+	}
 
 const difficultyLabels: Record<Difficulty, string> = {
 	easy: '入门',
@@ -457,7 +474,9 @@ const verdictSearchAliases: Record<Verdict, string[]> = {
 }
 
 function getQuestionSearchText(question: Question) {
-	const verdictLabel = question.verdict ? verdictLabels[question.verdict] : '待判定'
+	const verdictLabel = question.verdict
+		? verdictLabels[question.verdict]
+		: '待判定'
 	return [
 		question.text,
 		question.author.displayName,
@@ -504,7 +523,6 @@ function getHistoryMvpQuestions(item: SoupHistoryItem) {
 	if (!item.mvp || !('importantQuestions' in item.mvp)) return []
 	return item.mvp.importantQuestions
 }
-
 
 export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 	const bodyClass = options.bodyClass
@@ -607,9 +625,13 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 	function highlightQuestionText(text: string) {
 		return highlightQuestionTextBase(text, questionSearchText.value)
 	}
-	
+
 	function richTextLengthValidator(label: string, min: number, max: number) {
-		return (_rule: unknown, value: string, callback: (error?: Error) => void) => {
+		return (
+			_rule: unknown,
+			value: string,
+			callback: (error?: Error) => void,
+		) => {
 			const length = richTextToPlainText(value).trim().length
 			if (!length) {
 				callback(new Error(`请输入${label}`))
@@ -622,19 +644,19 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			callback()
 		}
 	}
-	
+
 	const authRules = computed<FormRules<typeof authForm>>(() => ({
 		displayName:
 			authMode.value === 'register'
 				? [
-					{ required: true, message: '请输入昵称', trigger: 'blur' },
-					{
-						min: 1,
-						max: 24,
-						message: '昵称长度为 1-24 个字符',
-						trigger: 'blur',
-					},
-				]
+						{ required: true, message: '请输入昵称', trigger: 'blur' },
+						{
+							min: 1,
+							max: 24,
+							message: '昵称长度为 1-24 个字符',
+							trigger: 'blur',
+						},
+					]
 				: [],
 		username: [
 			{ required: true, message: '请输入用户名', trigger: 'blur' },
@@ -679,15 +701,17 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 	const questionSortTimes = new Map<string, number>()
 	const avatarCache = loadAvatarCache()
 	const removedQuestionIds = new Set<string>()
-	
+
 	const canHost = computed(() =>
 		Boolean(user.value && room.value?.host.id === user.value.id),
 	)
 	const pendingQuestions = computed(
-		() => room.value?.questions.filter(question => !question.verdict).length ?? 0,
+		() =>
+			room.value?.questions.filter(question => !question.verdict).length ?? 0,
 	)
 	const answeredQuestions = computed(
-		() => room.value?.questions.filter(question => question.verdict).length ?? 0,
+		() =>
+			room.value?.questions.filter(question => question.verdict).length ?? 0,
 	)
 	const sortedQuestions = computed(() =>
 		[...(room.value?.questions ?? [])].sort(
@@ -696,7 +720,9 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 	)
 	const myQuestions = computed(() =>
 		user.value
-			? sortedQuestions.value.filter(question => question.author.id === user.value?.id)
+			? sortedQuestions.value.filter(
+					question => question.author.id === user.value?.id,
+				)
 			: [],
 	)
 	const importantQuestions = computed(() =>
@@ -712,7 +738,12 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		sortedQuestions.value.filter(question => question.verdict === 'no'),
 	)
 	const questionFilterOptions = computed<
-		Array<{ value: QuestionFilter; label: string; count: number; disabled?: boolean }>
+		Array<{
+			value: QuestionFilter
+			label: string
+			count: number
+			disabled?: boolean
+		}>
 	>(() => [
 		{ value: 'all', label: '全部', count: sortedQuestions.value.length },
 		{
@@ -729,8 +760,9 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		{
 			value: 'yes',
 			label: verdictLabels.yes,
-			count: sortedQuestions.value.filter(question => question.verdict === 'yes')
-				.length,
+			count: sortedQuestions.value.filter(
+				question => question.verdict === 'yes',
+			).length,
 		},
 		{
 			value: 'no',
@@ -741,8 +773,9 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		{
 			value: 'both',
 			label: verdictLabels.both,
-			count: sortedQuestions.value.filter(question => question.verdict === 'both')
-				.length,
+			count: sortedQuestions.value.filter(
+				question => question.verdict === 'both',
+			).length,
 		},
 		{
 			value: 'irrelevant',
@@ -772,7 +805,9 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 	const normalizedQuestionSearch = computed(() =>
 		normalizeSearchText(questionSearchText.value),
 	)
-	const questionSearchTerms = computed(() => splitSearchTerms(questionSearchText.value))
+	const questionSearchTerms = computed(() =>
+		splitSearchTerms(questionSearchText.value),
+	)
 	const visibleQuestions = computed(() => {
 		if (!questionSearchTerms.value.length) return filteredQuestionBase.value
 		return filteredQuestionBase.value.filter(question =>
@@ -814,7 +849,8 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		),
 	)
 	const thoughtNodeStats = computed(() => ({
-		important: thoughtNodes.value.filter(node => node.kind === 'important').length,
+		important: thoughtNodes.value.filter(node => node.kind === 'important')
+			.length,
 		yes: thoughtNodes.value.filter(node => node.kind === 'yes').length,
 		no: thoughtNodes.value.filter(node => node.kind === 'no').length,
 		custom: thoughtNodes.value.filter(node => node.kind === 'custom').length,
@@ -837,18 +873,23 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 	)
 	const selectedThoughtStyleTarget = computed(() => {
 		if (selectedThoughtTextId.value) {
-			const text = thoughtTexts.value.find(item => item.id === selectedThoughtTextId.value)
+			const text = thoughtTexts.value.find(
+				item => item.id === selectedThoughtTextId.value,
+			)
 			return text ? { type: 'text' as const, item: text } : null
 		}
 		if (selectedThoughtLinkId.value) {
-			const link = thoughtLinks.value.find(item => item.id === selectedThoughtLinkId.value)
+			const link = thoughtLinks.value.find(
+				item => item.id === selectedThoughtLinkId.value,
+			)
 			return link ? { type: 'link' as const, item: link } : null
 		}
 		return null
 	})
 	const selectedThoughtColor = computed({
 		get: () =>
-			selectedThoughtStyleTarget.value?.item.color ?? DEFAULT_THOUGHT_TEXT_COLOR,
+			selectedThoughtStyleTarget.value?.item.color ??
+			DEFAULT_THOUGHT_TEXT_COLOR,
 		set: value => updateSelectedThoughtStyle({ color: value }),
 	})
 	const selectedThoughtFontSize = computed({
@@ -867,9 +908,9 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		const end =
 			draggingThoughtLink.value.snapNodeId && draggingThoughtLink.value.snapSide
 				? getThoughtPortPoint(
-					draggingThoughtLink.value.snapNodeId,
-					draggingThoughtLink.value.snapSide,
-				)
+						draggingThoughtLink.value.snapNodeId,
+						draggingThoughtLink.value.snapSide,
+					)
 				: { x: draggingThoughtLink.value.x, y: draggingThoughtLink.value.y }
 		if (!end) return null
 		return {
@@ -881,7 +922,8 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 				start,
 				end,
 				draggingThoughtLink.value.fromSide,
-				draggingThoughtLink.value.snapSide ?? draggingThoughtLink.value.fromSide,
+				draggingThoughtLink.value.snapSide ??
+					draggingThoughtLink.value.fromSide,
 			),
 		}
 	})
@@ -936,7 +978,8 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		})
 		return [...byId.values()].sort(
 			(a, b) =>
-				Number(b.online) - Number(a.online) || b.questionCount - a.questionCount,
+				Number(b.online) - Number(a.online) ||
+				b.questionCount - a.questionCount,
 		)
 	})
 	const liveLeaderboard = computed(() => {
@@ -1005,7 +1048,9 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			: activeAmbiencePreset.value.background,
 	)
 	const activeBackgroundLabel = computed(() =>
-		activeBackgroundImage.value ? '自定义背景' : activeAmbiencePreset.value.label,
+		activeBackgroundImage.value
+			? '自定义背景'
+			: activeAmbiencePreset.value.label,
 	)
 	const roomMusicDataUrl = computed(() => ambienceDraft.musicDataUrl)
 	const roomMusicName = computed(() => ambienceDraft.musicName || '房间音乐')
@@ -1020,7 +1065,9 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 	)
 	const currentSoupRating = computed(() => room.value?.soupHistory?.at(-1))
 	const mySoupRating = computed(() =>
-		user.value && room.value?.ratingMap ? room.value.ratingMap[user.value.id] : 0,
+		user.value && room.value?.ratingMap
+			? room.value.ratingMap[user.value.id]
+			: 0,
 	)
 	const canRateCurrentSoup = computed(() =>
 		Boolean(room.value?.revealed && user.value && !canHost.value),
@@ -1036,7 +1083,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			: {},
 	)
 	const soupDrawerDirection = computed(() => (isMobile.value ? 'btt' : 'rtl'))
-	
+
 	watch(
 		isDark,
 		value => {
@@ -1045,9 +1092,12 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		},
 		{ immediate: true },
 	)
-	
+
 	watch(
-		() => chatQuestions.value.map(question => `${question.id}:${question.verdict ?? ''}`).join('|'),
+		() =>
+			chatQuestions.value
+				.map(question => `${question.id}:${question.verdict ?? ''}`)
+				.join('|'),
 		() => {
 			nextTick(() => {
 				const timeline = timelineRef.value
@@ -1056,7 +1106,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		},
 		{ flush: 'post' },
 	)
-	
+
 	watch(canHost, value => {
 		selectedRole.value = value ? 'host' : 'player'
 		if (!value && activePanel.value !== 'canvas') {
@@ -1065,7 +1115,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			answerHidden.value = true
 		}
 	})
-	
+
 	watch(ambienceVolume, value => {
 		const nextVolume = clampVolume(value)
 		if (audioRef.value) audioRef.value.volume = nextVolume / 100
@@ -1079,7 +1129,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			queueRoomSave()
 		}
 	})
-	
+
 	watch(activeMusicDataUrl, () => {
 		musicPlaying.value = false
 		nextTick(() => {
@@ -1088,11 +1138,11 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			audioRef.value.volume = ambienceVolume.value / 100
 		})
 	})
-	
+
 	watch(useRoomMusic, value => {
 		if (!value) audioRef.value?.pause()
 	})
-	
+
 	watch(useHostBackground, value => {
 		if (!room.value) return
 		localStorage.setItem(
@@ -1100,22 +1150,19 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			value ? '1' : '0',
 		)
 	})
-	
-	watch(
-		[() => room.value?.code, () => user.value?.id],
-		() => loadThoughtBoard(),
+
+	watch([() => room.value?.code, () => user.value?.id], () =>
+		loadThoughtBoard(),
 	)
-	
-	watch(
-		thoughtSourceQuestions,
-		() => syncThoughtSources(false),
-		{ flush: 'post' },
-	)
-	
+
+	watch(thoughtSourceQuestions, () => syncThoughtSources(false), {
+		flush: 'post',
+	})
+
 	watch(authMode, () => {
 		authFormRef.value?.clearValidate()
 	})
-	
+
 	onMounted(async () => {
 		mobileMediaQuery = window.matchMedia('(max-width: 760px)')
 		updateViewportState()
@@ -1131,7 +1178,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			await joinRoom(roomCodeInput.value, false)
 		}
 	})
-	
+
 	onBeforeUnmount(() => {
 		if (bodyClass) document.body.classList.remove(bodyClass)
 		window.clearTimeout(canvasSaveTimer)
@@ -1146,24 +1193,28 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		leaveCurrentRoom()
 		socket?.disconnect()
 	})
-	
+
 	function loadTheme() {
 		const cached = localStorage.getItem(STORAGE_THEME)
 		if (cached) return cached === 'dark'
 		return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
 	}
-	
+
 	function getInitialRoomCode() {
 		const url = new URL(window.location.href)
 		return url.searchParams.get('room') || ''
 	}
-	
+
 	function updateViewportState() {
 		isMobile.value =
-			mobileMediaQuery?.matches ?? window.matchMedia('(max-width: 760px)').matches
+			mobileMediaQuery?.matches ??
+			window.matchMedia('(max-width: 760px)').matches
 	}
-	
-	async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+
+	async function request<T>(
+		path: string,
+		options: RequestInit = {},
+	): Promise<T> {
 		const headers = new Headers(options.headers)
 		headers.set('Content-Type', 'application/json')
 		if (token.value) headers.set('Authorization', `Bearer ${token.value}`)
@@ -1176,11 +1227,11 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		return response.json() as Promise<T>
 	}
-	
+
 	function isRecord(value: unknown): value is Record<string, unknown> {
 		return typeof value === 'object' && value !== null
 	}
-	
+
 	function isRoomState(value: unknown): value is RoomState {
 		return (
 			isRecord(value) &&
@@ -1188,16 +1239,18 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			Array.isArray(value.questions)
 		)
 	}
-	
+
 	function isQuestionMutationResponse(
 		value: unknown,
 	): value is QuestionMutationResponse {
 		return isRecord(value) && isRecord(value.question)
 	}
-	
+
 	function loadAvatarCache() {
 		try {
-			const cache = JSON.parse(localStorage.getItem(STORAGE_AVATAR_CACHE) || '{}')
+			const cache = JSON.parse(
+				localStorage.getItem(STORAGE_AVATAR_CACHE) || '{}',
+			)
 			if (!isRecord(cache)) return new Map<string, string>()
 			return new Map(
 				Object.entries(cache).filter(
@@ -1208,7 +1261,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			return new Map<string, string>()
 		}
 	}
-	
+
 	function persistAvatarCache() {
 		try {
 			localStorage.setItem(
@@ -1219,35 +1272,37 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			// Ignore storage quota/private-mode failures; avatars can fall back to initials.
 		}
 	}
-	
+
 	function rememberAvatar(userId?: string, avatarDataUrl?: string) {
 		if (!userId || !avatarDataUrl) return
 		avatarCache.set(userId, avatarDataUrl)
 		persistAvatarCache()
 	}
-	
+
 	function hydrateUserAvatar<T extends { id: string; avatarDataUrl?: string }>(
 		userData: T,
 	): T {
 		rememberAvatar(userData.id, userData.avatarDataUrl)
-		const avatarDataUrl = userData.avatarDataUrl || avatarCache.get(userData.id) || ''
+		const avatarDataUrl =
+			userData.avatarDataUrl || avatarCache.get(userData.id) || ''
 		if (avatarDataUrl === userData.avatarDataUrl) return userData
 		return { ...userData, avatarDataUrl }
 	}
-	
+
 	function hydrateRoomMember(member: RoomMember): RoomMember {
-		const avatarDataUrl = member.avatarDataUrl || avatarCache.get(member.userId) || ''
+		const avatarDataUrl =
+			member.avatarDataUrl || avatarCache.get(member.userId) || ''
 		if (avatarDataUrl === member.avatarDataUrl) return member
 		return { ...member, avatarDataUrl }
 	}
-	
+
 	function hydrateQuestion(question: Question): Question {
 		return {
 			...question,
 			author: hydrateUserAvatar(question.author),
 		}
 	}
-	
+
 	function hydrateMvpResult(result?: MvpResult | null): MvpResult | null {
 		if (!result) return null
 		return {
@@ -1259,8 +1314,10 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			})),
 		}
 	}
-	
-	function hydrateSettlement(nextSettlement?: Settlement | null): Settlement | null {
+
+	function hydrateSettlement(
+		nextSettlement?: Settlement | null,
+	): Settlement | null {
 		if (!nextSettlement) return null
 		return {
 			...nextSettlement,
@@ -1270,7 +1327,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			})),
 		}
 	}
-	
+
 	function hydrateSoupHistoryItem(item: SoupHistoryItem): SoupHistoryItem {
 		return {
 			...item,
@@ -1283,20 +1340,21 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 						: item.mvp,
 		}
 	}
-	
+
 	function hydrateRoom(data: RoomState): RoomState {
 		return {
 			...data,
 			host: hydrateUserAvatar(data.host),
 			settlement: hydrateSettlement(data.settlement) ?? undefined,
 			mvp: hydrateMvpResult(data.mvp),
-			soupHistory: data.soupHistory?.map(hydrateSoupHistoryItem) ?? data.soupHistory,
+			soupHistory:
+				data.soupHistory?.map(hydrateSoupHistoryItem) ?? data.soupHistory,
 			questions: data.questions
 				.map(hydrateQuestion)
 				.filter(question => !removedQuestionIds.has(question.id)),
 		}
 	}
-	
+
 	function mergeRoomWithLocalQuestions(data: RoomState): RoomState {
 		const nextRoom = hydrateRoom(data)
 		if (!room.value || room.value.code !== nextRoom.code) return nextRoom
@@ -1306,7 +1364,8 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		const byId = new Map(
 			nextRoom.questions.map(question => {
 				const localQuestion = localById.get(question.id)
-				if (localQuestion?.clientKey) question.clientKey = localQuestion.clientKey
+				if (localQuestion?.clientKey)
+					question.clientKey = localQuestion.clientKey
 				if (localQuestion?.clientSortAt) {
 					question.clientSortAt = localQuestion.clientSortAt
 				}
@@ -1322,7 +1381,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			questions: [...byId.values()],
 		}
 	}
-	
+
 	function applyQuestionPatchResponse(response: QuestionPatchResponse) {
 		if (isRoomState(response)) {
 			room.value = mergeRoomWithLocalQuestions(response)
@@ -1334,7 +1393,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		upsertQuestion(response)
 	}
-	
+
 	function removeQuestionLocally(questionId: string) {
 		if (!room.value) return
 		removedQuestionIds.add(questionId)
@@ -1344,7 +1403,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		questionSortTimes.delete(questionId)
 		if (selectedQuestionId.value === questionId) selectedQuestionId.value = ''
 	}
-	
+
 	function createPendingQuestion(text: string): Question {
 		const now = new Date().toISOString()
 		const id =
@@ -1369,7 +1428,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			clientStatus: 'sending',
 		}
 	}
-	
+
 	function removePendingQuestionFor(question: Question) {
 		if (!room.value || question.clientStatus) return null
 		const pendingIndex = room.value.questions.findIndex(
@@ -1382,7 +1441,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		const [pending] = room.value.questions.splice(pendingIndex, 1)
 		return pending
 	}
-	
+
 	function replacePendingQuestion(tempId: string, question: Question) {
 		if (!room.value) return
 		const nextQuestion = hydrateQuestion(question)
@@ -1409,7 +1468,8 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		)
 		if (nextExistingIndex >= 0) {
 			const existingQuestion = room.value.questions[nextExistingIndex]
-			nextQuestion.clientKey = nextQuestion.clientKey ?? existingQuestion.clientKey
+			nextQuestion.clientKey =
+				nextQuestion.clientKey ?? existingQuestion.clientKey
 			nextQuestion.clientSortAt =
 				nextQuestion.clientSortAt ?? existingQuestion.clientSortAt
 			room.value.questions.splice(nextExistingIndex, 1, nextQuestion)
@@ -1418,13 +1478,13 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		upsertQuestion(nextQuestion)
 	}
-	
+
 	function markPendingQuestionFailed(tempId: string) {
 		if (!room.value) return
 		const target = room.value.questions.find(question => question.id === tempId)
 		if (target) target.clientStatus = 'failed'
 	}
-	
+
 	function applyQuestionDeleteResponse(response: QuestionDeleteResponse) {
 		if (isRoomState(response)) {
 			room.value = mergeRoomWithLocalQuestions(response)
@@ -1432,7 +1492,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		removeQuestionLocally(response.questionId)
 	}
-	
+
 	async function restoreSession() {
 		if (!token.value) return
 		try {
@@ -1441,7 +1501,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			logout(false)
 		}
 	}
-	
+
 	function validateAuthPayload(payload: {
 		mode: AuthMode
 		username: string
@@ -1469,7 +1529,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		return true
 	}
-	
+
 	async function submitAuthPayload(payload: {
 		mode: AuthMode
 		username: string
@@ -1485,21 +1545,24 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		const requestPayload =
 			normalizedPayload.mode === 'register'
 				? {
-					username: normalizedPayload.username,
-					password: normalizedPayload.password,
-					displayName:
-						normalizedPayload.displayName || normalizedPayload.username,
-				}
+						username: normalizedPayload.username,
+						password: normalizedPayload.password,
+						displayName:
+							normalizedPayload.displayName || normalizedPayload.username,
+					}
 				: {
-					username: normalizedPayload.username,
-					password: normalizedPayload.password,
-				}
+						username: normalizedPayload.username,
+						password: normalizedPayload.password,
+					}
 		authSubmitting.value = true
 		try {
-			const data = await request<AuthResponse>(`/auth/${normalizedPayload.mode}`, {
-				method: 'POST',
-				body: JSON.stringify(requestPayload),
-			})
+			const data = await request<AuthResponse>(
+				`/auth/${normalizedPayload.mode}`,
+				{
+					method: 'POST',
+					body: JSON.stringify(requestPayload),
+				},
+			)
 			token.value = data.token
 			user.value = hydrateUserAvatar(data.user)
 			localStorage.setItem(STORAGE_TOKEN, data.token)
@@ -1514,7 +1577,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			authSubmitting.value = false
 		}
 	}
-	
+
 	async function submitAuth() {
 		if (authFormRef.value) {
 			const valid = await authFormRef.value.validate().catch(() => false)
@@ -1527,7 +1590,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			displayName: authForm.displayName,
 		})
 	}
-	
+
 	async function submitAuthFromBigScreen(payload: {
 		mode: AuthMode
 		username: string
@@ -1540,9 +1603,9 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		authForm.displayName = payload.displayName
 		await submitAuthPayload(payload)
 	}
-	
+
 	function logout(showMessage = true) {
-		leaveCurrentRoom()
+		leaveRoomByUser(false)
 		token.value = ''
 		user.value = null
 		soups.value = []
@@ -1552,7 +1615,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		socket = null
 		if (showMessage) ElMessage.success('已退出登录')
 	}
-	
+
 	async function loadSoups() {
 		if (!user.value) {
 			soups.value = []
@@ -1562,24 +1625,65 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		soups.value = await request<Soup[]>('/soups')
 		selectedSoupId.value = soups.value[0]?.id ?? ''
 	}
-	
+
 	async function createCustomSoup() {
 		if (!customSoupFormRef.value) return
 		const valid = await customSoupFormRef.value.validate().catch(() => false)
 		if (!valid) return
-		creatingSoup.value = true
-		const isEditing = Boolean(editingSoupId.value)
-		const payload = {
-			...customSoup,
-			surface: sanitizeRichText(customSoup.surface),
-			answer: sanitizeRichText(customSoup.answer),
+		await persistSoupPayload(
+			{
+				...customSoup,
+				surface: sanitizeRichText(customSoup.surface),
+				answer: sanitizeRichText(customSoup.answer),
+			},
+			editingSoupId.value,
+		)
+	}
+
+	function normalizeSoupPayload(payload: SoupPayload) {
+		const nextPayload = {
+			title: payload.title.trim(),
+			surface: sanitizeRichText(payload.surface),
+			answer: sanitizeRichText(payload.answer),
+			category: payload.category.trim() || '自建',
+			difficulty: payload.difficulty,
 		}
+		const surfaceLength = richTextToPlainText(nextPayload.surface).trim().length
+		const answerLength = richTextToPlainText(nextPayload.answer).trim().length
+		if (nextPayload.title.length < 2 || nextPayload.title.length > 60) {
+			ElMessage.warning('标题长度为 2-60 个字符')
+			return null
+		}
+		if (surfaceLength < 8 || surfaceLength > 2000) {
+			ElMessage.warning('汤面长度为 8-2000 个字符')
+			return null
+		}
+		if (answerLength < 8 || answerLength > 4000) {
+			ElMessage.warning('汤底长度为 8-4000 个字符')
+			return null
+		}
+		if (nextPayload.category.length < 1 || nextPayload.category.length > 20) {
+			ElMessage.warning('分类长度为 1-20 个字符')
+			return null
+		}
+		if (!['easy', 'medium', 'hard'].includes(nextPayload.difficulty)) {
+			ElMessage.warning('请选择难度')
+			return null
+		}
+		return nextPayload
+	}
+
+	async function persistSoupPayload(payload: SoupPayload, soupId = '') {
+		const normalizedPayload = normalizeSoupPayload(payload)
+		if (!normalizedPayload) return false
+		creatingSoup.value = true
+		const isEditing = Boolean(soupId)
 		try {
 			const soup = await request<Soup>(
-				isEditing ? `/soups/${editingSoupId.value}` : '/soups',
+				isEditing ? `/soups/${soupId}` : '/soups',
 				{
 					method: isEditing ? 'PATCH' : 'POST',
-					body: JSON.stringify(payload),
+					body: JSON.stringify(normalizedPayload),
 				},
 			)
 			const index = soups.value.findIndex(item => item.id === soup.id)
@@ -1592,31 +1696,30 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			resetCustomSoupForm()
 			closeCustomSoupDialog()
 			ElMessage.success(isEditing ? '汤面已更新' : '自建汤面已保存')
+			return true
 		} catch (error) {
 			ElMessage.error(error instanceof Error ? error.message : '保存失败')
+			return false
 		} finally {
 			creatingSoup.value = false
 		}
 	}
-	
-	async function saveSoupFromBigScreen(payload: {
-		title: string
-		surface: string
-		answer: string
-		category: string
-		difficulty: Difficulty
-	}, soupId?: string) {
+
+	async function saveSoupFromBigScreen(payload: SoupPayload, soupId?: string) {
 		editingSoupId.value = soupId || ''
-		Object.assign(customSoup, payload)
-		await createCustomSoup()
+		Object.assign(customSoup, {
+			...customSoup,
+			...payload,
+		})
+		await persistSoupPayload(payload, editingSoupId.value)
 	}
-	
+
 	function openCreateSoupDialog() {
 		editingSoupId.value = ''
 		resetCustomSoupForm()
 		customSoupOpen.value = true
 	}
-	
+
 	function openEditSoupDialog(soup: Soup) {
 		editingSoupId.value = soup.id
 		Object.assign(customSoup, {
@@ -1629,7 +1732,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		customSoupOpen.value = true
 		nextTick(() => customSoupFormRef.value?.clearValidate())
 	}
-	
+
 	function resetCustomSoupForm() {
 		Object.assign(customSoup, {
 			title: '',
@@ -1639,13 +1742,13 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			difficulty: 'medium',
 		})
 	}
-	
+
 	function closeCustomSoupDialog() {
 		customSoupOpen.value = false
 		editingSoupId.value = ''
 		customSoupFormRef.value?.clearValidate()
 	}
-	
+
 	async function deleteSoup(soup: Soup) {
 		const confirmed = window.confirm(
 			`确定删除「${soup.title}」吗？已创建的房间不会受影响，但它会从你的个人题库中移除。`,
@@ -1667,7 +1770,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			deletingSoupId.value = ''
 		}
 	}
-	
+
 	async function createRoom(options: { replaceCurrent?: boolean } = {}) {
 		if (!user.value) return ElMessage.warning('请先登录')
 		if (!selectedSoupId.value)
@@ -1690,12 +1793,12 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		roomSetupOpen.value = false
 		ElMessage.success(`房间 ${data.code} 已创建`)
 	}
-	
+
 	function openRoomSetup(mode: 'create' | 'switch' = 'create') {
 		roomSetupMode.value = mode
 		roomSetupOpen.value = true
 	}
-	
+
 	async function switchRoomSoup() {
 		if (!room.value) return createRoom()
 		if (!canHost.value) return ElMessage.warning('只有主持人可以切换题目')
@@ -1716,7 +1819,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		roomSetupOpen.value = false
 		ElMessage.success('已切换海龟汤，本局记录已清空')
 	}
-	
+
 	async function joinRoom(code = roomCodeInput.value, showMessage = true) {
 		const normalized = code.trim().toUpperCase()
 		if (!normalized) return
@@ -1729,15 +1832,16 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		selectedRole.value = canHost.value ? 'host' : 'player'
 		if (showMessage) ElMessage.success(`已进入房间 ${data.code}`)
 	}
-	
+
 	function applyRoom(data: RoomState) {
 		const nextRoom = hydrateRoom(data)
 		room.value = nextRoom
 		mvpResult.value = hydrateMvpResult(nextRoom.mvp)
 		roomCodeInput.value = nextRoom.code
 		useHostBackground.value =
-			localStorage.getItem(STORAGE_USE_HOST_BACKGROUND_PREFIX + nextRoom.code) !==
-			'0'
+			localStorage.getItem(
+				STORAGE_USE_HOST_BACKGROUND_PREFIX + nextRoom.code,
+			) !== '0'
 		syncAmbienceFromRoom(nextRoom)
 		syncSelectedSoupFromRoom(nextRoom)
 		updateShareUrl()
@@ -1747,7 +1851,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			restoreCanvas()
 		})
 	}
-	
+
 	function syncSelectedSoupFromRoom(data: RoomState) {
 		const matched = soups.value.find(
 			soup =>
@@ -1756,7 +1860,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		)
 		if (matched) selectedSoupId.value = matched.id
 	}
-	
+
 	function resetRoundState(nextRoom?: RoomState) {
 		const previousRoomCode = room.value?.code
 		if (nextRoom) room.value = hydrateRoom(nextRoom)
@@ -1775,48 +1879,50 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		clearThoughtBoardStorage(previousRoomCode)
 		nextTick(() => restoreCanvas(''))
 	}
-	
+
 	function toggleQuestionSelection(questionId: string) {
 		if (isMobile.value) return
-		selectedQuestionId.value = selectedQuestionId.value === questionId ? '' : questionId
+		selectedQuestionId.value =
+			selectedQuestionId.value === questionId ? '' : questionId
 	}
-	
+
 	function openHostAction(question: Question) {
 		if (isMobile.value || window.matchMedia('(max-width: 760px)').matches) {
 			mobileHostActionQuestion.value = question
 			mobileHostActionOpen.value = true
 			return
 		}
-		selectedQuestionId.value = selectedQuestionId.value === question.id ? '' : question.id
+		selectedQuestionId.value =
+			selectedQuestionId.value === question.id ? '' : question.id
 	}
-	
+
 	async function applyMobileVerdict(verdict: Verdict) {
 		const question = mobileHostActionQuestion.value
 		if (!question) return
 		await setVerdict(question.id, verdict)
 		mobileHostActionOpen.value = false
 	}
-	
+
 	async function toggleMobileImportant() {
 		const question = mobileHostActionQuestion.value
 		if (!question) return
 		await toggleImportant(question)
 	}
-	
+
 	async function removeMobileQuestion() {
 		const question = mobileHostActionQuestion.value
 		if (!question) return
 		await removeQuestion(question.id)
 		mobileHostActionOpen.value = false
 	}
-	
+
 	async function updateMobileQuestionScoring(patch: Partial<QuestionSignal>) {
 		const question = mobileHostActionQuestion.value
 		if (!question) return
 		await updateQuestionScoring(question, patch)
 	}
-	
-	function leaveRoomByUser() {
+
+	function leaveRoomByUser(showMessage = true) {
 		if (!room.value) return
 		leaveCurrentRoom()
 		room.value = null
@@ -1832,9 +1938,9 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		url.searchParams.delete('room')
 		window.history.replaceState({}, '', url)
 		shareUrl.value = url.toString()
-		ElMessage.success('已退出房间')
+		if (showMessage) ElMessage.success('已退出房间')
 	}
-	
+
 	function revealQuestion(questionId: string) {
 		questionViewMode.value = 'all'
 		questionSearchText.value = ''
@@ -1842,27 +1948,27 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		thoughtBoardOpen.value = false
 		selectedQuestionId.value = questionId
 		nextTick(() => {
-			const target = [...document.querySelectorAll<HTMLElement>('.question-item')].find(
-				element => element.dataset.questionId === questionId,
-			)
+			const target = [
+				...document.querySelectorAll<HTMLElement>('.question-item'),
+			].find(element => element.dataset.questionId === questionId)
 			target?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 		})
 	}
-	
+
 	function openInsightDrawer(mode: InsightMode) {
 		activeInsightMode.value = mode
 		insightDrawerOpen.value = true
 	}
-	
+
 	function getThoughtBoardKey() {
 		if (!room.value) return ''
 		return getThoughtBoardKeyForRoom(room.value.code)
 	}
-	
+
 	function getThoughtBoardKeyForRoom(roomCode: string) {
 		return `${STORAGE_THOUGHT_BOARD_PREFIX}${roomCode}:${user.value?.id ?? 'guest'}`
 	}
-	
+
 	function clampThoughtNode(node: ThoughtNode): ThoughtNode {
 		const boardWidth = getThoughtBoardWidth()
 		return {
@@ -1873,7 +1979,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			height: Math.max(96, Math.min(220, node.height)),
 		}
 	}
-	
+
 	function getThoughtBoardWidth() {
 		const viewportWidth =
 			typeof window === 'undefined'
@@ -1881,13 +1987,13 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 				: Math.max(360, window.innerWidth - (isMobile.value ? 20 : 64))
 		return Math.max(THOUGHT_BOARD_WIDTH, viewportWidth)
 	}
-	
+
 	function getThoughtNodeKind(question: Question): ThoughtNodeKind {
 		if (question.important) return 'important'
 		if (question.verdict === 'yes') return 'yes'
 		return 'no'
 	}
-	
+
 	function createThoughtNodeFromQuestion(
 		question: Question,
 		index: number,
@@ -1908,7 +2014,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			height: THOUGHT_NODE_HEIGHT,
 		}
 	}
-	
+
 	function sanitizeThoughtNodes(value: unknown): ThoughtNode[] {
 		if (!Array.isArray(value)) return []
 		return value
@@ -1931,7 +2037,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 				}),
 			)
 	}
-	
+
 	function sanitizeThoughtLinks(value: unknown): ThoughtLink[] {
 		if (!Array.isArray(value)) return []
 		const isThoughtPortSide = (side: unknown): side is ThoughtPortSide =>
@@ -1952,11 +2058,13 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 				toSide: isThoughtPortSide(item.toSide) ? item.toSide : 'left',
 				label: typeof item.label === 'string' ? item.label : '',
 				color:
-					typeof item.color === 'string' ? item.color : DEFAULT_THOUGHT_TEXT_COLOR,
+					typeof item.color === 'string'
+						? item.color
+						: DEFAULT_THOUGHT_TEXT_COLOR,
 				fontSize: Number(item.fontSize) || DEFAULT_THOUGHT_TEXT_SIZE,
 			}))
 	}
-	
+
 	function sanitizeThoughtTexts(value: unknown): ThoughtText[] {
 		if (!Array.isArray(value)) return []
 		return value
@@ -1964,17 +2072,22 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			.map(item => ({
 				id: String(item.id),
 				text: typeof item.text === 'string' ? item.text : '文字',
-				x: Math.max(0, Math.min(getThoughtBoardWidth() - 80, Number(item.x) || 0)),
+				x: Math.max(
+					0,
+					Math.min(getThoughtBoardWidth() - 80, Number(item.x) || 0),
+				),
 				y: Math.max(
 					0,
 					Math.min(THOUGHT_BOARD_HEIGHT - 40, Number(item.y) || 0),
 				),
 				color:
-					typeof item.color === 'string' ? item.color : DEFAULT_THOUGHT_TEXT_COLOR,
+					typeof item.color === 'string'
+						? item.color
+						: DEFAULT_THOUGHT_TEXT_COLOR,
 				fontSize: Number(item.fontSize) || DEFAULT_THOUGHT_TEXT_SIZE,
 			}))
 	}
-	
+
 	function sanitizeThoughtBoardData(value: unknown): ThoughtBoardData {
 		if (Array.isArray(value)) {
 			return { nodes: sanitizeThoughtNodes(value), links: [], texts: [] }
@@ -1986,7 +2099,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			texts: sanitizeThoughtTexts(value.texts),
 		}
 	}
-	
+
 	function loadThoughtBoard() {
 		const key = getThoughtBoardKey()
 		if (!key) {
@@ -2009,7 +2122,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		syncThoughtSources(false)
 	}
-	
+
 	function saveThoughtBoard() {
 		const key = getThoughtBoardKey()
 		if (!key) return
@@ -2022,7 +2135,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			}),
 		)
 	}
-	
+
 	function syncThoughtSources(forceReset: boolean) {
 		if (!room.value) {
 			thoughtNodes.value = []
@@ -2056,7 +2169,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		})
 		if (changed || forceReset) saveThoughtBoard()
 	}
-	
+
 	function openThoughtBoard() {
 		if (!room.value) {
 			ElMessage.warning('请先进入房间')
@@ -2065,24 +2178,29 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		syncThoughtSources(false)
 		thoughtBoardOpen.value = true
 	}
-	
+
 	function updateThoughtNodeText(nodeId: string, text: string) {
 		const node = thoughtNodes.value.find(item => item.id === nodeId)
 		if (!node) return
 		node.text = text
 		saveThoughtBoard()
 	}
-	
+
 	function addThoughtNode() {
 		if (!room.value) return ElMessage.warning('请先进入房间')
 		const text = thoughtDraftText.value.trim() || '新的推理节点'
-		const offset = thoughtNodes.value.filter(node => node.kind === 'custom').length
+		const offset = thoughtNodes.value.filter(
+			node => node.kind === 'custom',
+		).length
 		const boardWidth = getThoughtBoardWidth()
 		thoughtNodes.value.push({
 			id: `custom:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`,
 			kind: 'custom',
 			text,
-			x: Math.min(boardWidth - THOUGHT_NODE_WIDTH - 40, 880 + (offset % 2) * 54),
+			x: Math.min(
+				boardWidth - THOUGHT_NODE_WIDTH - 40,
+				880 + (offset % 2) * 54,
+			),
 			y: 36 + (offset % 5) * 128,
 			width: THOUGHT_NODE_WIDTH,
 			height: THOUGHT_NODE_HEIGHT,
@@ -2090,31 +2208,32 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		thoughtDraftText.value = ''
 		saveThoughtBoard()
 	}
-	
+
 	function removeThoughtNode(nodeId: string) {
 		thoughtNodes.value = thoughtNodes.value.filter(node => node.id !== nodeId)
 		thoughtLinks.value = thoughtLinks.value.filter(
 			link => link.from !== nodeId && link.to !== nodeId,
 		)
 		if (selectedThoughtNodeId.value === nodeId) selectedThoughtNodeId.value = ''
-		if (draggingThoughtLink.value?.from === nodeId) draggingThoughtLink.value = null
+		if (draggingThoughtLink.value?.from === nodeId)
+			draggingThoughtLink.value = null
 		saveThoughtBoard()
 	}
-	
+
 	function syncThoughtBoard() {
 		syncThoughtSources(false)
 		ElMessage.success('已同步最新线索')
 	}
-	
+
 	function startThoughtBoardResize(event: PointerEvent) {
 		if (isMobile.value) return
 		resizingThoughtBoard.value = {
 			startY: event.clientY,
 			startHeight: thoughtBoardHeight.value,
 		}
-			; (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+		;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
 	}
-	
+
 	function resizeThoughtBoard(event: PointerEvent) {
 		if (!resizingThoughtBoard.value || isMobile.value) return
 		const viewportHeight = Math.max(window.innerHeight, 1)
@@ -2126,15 +2245,15 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			Math.min(100, resizingThoughtBoard.value.startHeight + deltaPercent),
 		)
 	}
-	
+
 	function stopThoughtBoardResize() {
 		resizingThoughtBoard.value = null
 	}
-	
+
 	function maximizeThoughtBoard() {
 		thoughtBoardHeight.value = 100
 	}
-	
+
 	function clearThoughtBoardStorage(roomCode = room.value?.code) {
 		const key = roomCode ? getThoughtBoardKeyForRoom(roomCode) : ''
 		if (key) localStorage.removeItem(key)
@@ -2148,47 +2267,54 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		editingThoughtTextId.value = ''
 		draggingThoughtLink.value = null
 	}
-	
+
 	function selectThoughtNode(node: ThoughtNode) {
 		selectedThoughtNodeId.value = node.id
 		selectedThoughtLinkId.value = ''
 		selectedThoughtTextId.value = ''
 	}
-	
+
 	function selectThoughtLink(linkId: string) {
 		selectedThoughtLinkId.value = linkId
 		selectedThoughtNodeId.value = ''
 		selectedThoughtTextId.value = ''
 	}
-	
+
 	function selectThoughtText(textId: string) {
 		selectedThoughtTextId.value = textId
 		selectedThoughtNodeId.value = ''
 		selectedThoughtLinkId.value = ''
 	}
-	
+
 	function editThoughtLink(linkId: string) {
 		selectThoughtLink(linkId)
 		editingThoughtLinkId.value = linkId
 		nextTick(() => {
-			document.querySelector<HTMLInputElement>(
-				`[data-thought-link-input="${linkId}"]`,
-			)?.focus()
+			document
+				.querySelector<HTMLInputElement>(
+					`[data-thought-link-input="${linkId}"]`,
+				)
+				?.focus()
 		})
 	}
-	
+
 	function editThoughtText(textId: string) {
 		selectThoughtText(textId)
 		draggingThoughtText.value = null
 		editingThoughtTextId.value = textId
 		nextTick(() => {
-			document.querySelector<HTMLTextAreaElement>(
-				`[data-thought-text-input="${textId}"]`,
-			)?.focus()
+			document
+				.querySelector<HTMLTextAreaElement>(
+					`[data-thought-text-input="${textId}"]`,
+				)
+				?.focus()
 		})
 	}
-	
-	function updateSelectedThoughtStyle(patch: { color?: string; fontSize?: number }) {
+
+	function updateSelectedThoughtStyle(patch: {
+		color?: string
+		fontSize?: number
+	}) {
 		const target = selectedThoughtStyleTarget.value
 		if (!target) return
 		if (typeof patch.color === 'string') target.item.color = patch.color
@@ -2197,26 +2323,26 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		saveThoughtBoard()
 	}
-	
+
 	function updateSelectedThoughtFontSize(event: Event) {
 		const value = Number((event.target as HTMLInputElement).value)
 		if (!Number.isNaN(value)) selectedThoughtFontSize.value = value
 	}
-	
+
 	function updateThoughtText(textId: string, text: string) {
 		const item = thoughtTexts.value.find(value => value.id === textId)
 		if (!item) return
 		item.text = text
 		saveThoughtBoard()
 	}
-	
+
 	function removeThoughtText(textId: string) {
 		thoughtTexts.value = thoughtTexts.value.filter(item => item.id !== textId)
 		if (selectedThoughtTextId.value === textId) selectedThoughtTextId.value = ''
 		if (editingThoughtTextId.value === textId) editingThoughtTextId.value = ''
 		saveThoughtBoard()
 	}
-	
+
 	function addThoughtTextAt(x: number, y: number) {
 		const id = `text:${Date.now()}:${Math.random().toString(36).slice(2, 7)}`
 		thoughtTexts.value.push({
@@ -2233,14 +2359,15 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		selectedThoughtLinkId.value = ''
 		saveThoughtBoard()
 	}
-	
+
 	function handleThoughtCanvasDoubleClick(event: MouseEvent) {
 		const target = event.target as HTMLElement
-		if (target.closest('.thought-node, .thought-text, .thought-link-label')) return
+		if (target.closest('.thought-node, .thought-text, .thought-link-label'))
+			return
 		const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
 		addThoughtTextAt(event.clientX - rect.left, event.clientY - rect.top)
 	}
-	
+
 	function startThoughtTextDrag(event: PointerEvent, item: ThoughtText) {
 		const target = event.target as HTMLElement
 		if (target.closest('textarea, input, button')) return
@@ -2257,20 +2384,22 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			originX: item.x,
 			originY: item.y,
 		}
-			; (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+		;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
 	}
-	
+
 	function moveThoughtTextDrag(event: PointerEvent) {
 		if (!draggingThoughtText.value) return
-		const item = thoughtTexts.value.find(text => text.id === draggingThoughtText.value?.id)
+		const item = thoughtTexts.value.find(
+			text => text.id === draggingThoughtText.value?.id,
+		)
 		if (!item) return
 		item.x = Math.max(
 			0,
 			Math.min(
 				getThoughtBoardWidth() - 80,
 				draggingThoughtText.value.originX +
-				event.clientX -
-				draggingThoughtText.value.startX,
+					event.clientX -
+					draggingThoughtText.value.startX,
 			),
 		)
 		item.y = Math.max(
@@ -2278,18 +2407,18 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			Math.min(
 				THOUGHT_BOARD_HEIGHT - 40,
 				draggingThoughtText.value.originY +
-				event.clientY -
-				draggingThoughtText.value.startY,
+					event.clientY -
+					draggingThoughtText.value.startY,
 			),
 		)
 	}
-	
+
 	function stopThoughtTextDrag() {
 		if (!draggingThoughtText.value) return
 		draggingThoughtText.value = null
 		saveThoughtBoard()
 	}
-	
+
 	function addThoughtLink(
 		from: string,
 		to: string,
@@ -2317,22 +2446,25 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		})
 		saveThoughtBoard()
 	}
-	
+
 	function updateThoughtLinkLabel(linkId: string, label: string) {
 		const link = thoughtLinks.value.find(item => item.id === linkId)
 		if (!link) return
 		link.label = label
 		saveThoughtBoard()
 	}
-	
+
 	function removeThoughtLink(linkId: string) {
 		thoughtLinks.value = thoughtLinks.value.filter(link => link.id !== linkId)
 		if (selectedThoughtLinkId.value === linkId) selectedThoughtLinkId.value = ''
 		if (editingThoughtLinkId.value === linkId) editingThoughtLinkId.value = ''
 		saveThoughtBoard()
 	}
-	
-	function getThoughtPortPoint(nodeId: string, side: ThoughtPortSide = 'right') {
+
+	function getThoughtPortPoint(
+		nodeId: string,
+		side: ThoughtPortSide = 'right',
+	) {
 		const node = thoughtNodes.value.find(item => item.id === nodeId)
 		if (!node) return null
 		const points: Record<ThoughtPortSide, { x: number; y: number }> = {
@@ -2343,7 +2475,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		return points[side]
 	}
-	
+
 	function getThoughtCurvePath(
 		from: { x: number; y: number },
 		to: { x: number; y: number },
@@ -2371,7 +2503,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		return `M ${from.x} ${from.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${to.x} ${to.y}`
 	}
-	
+
 	function thoughtLinkGeometry(link: ThoughtLink) {
 		const fromSide = link.fromSide ?? 'right'
 		const toSide = link.toSide ?? 'left'
@@ -2392,9 +2524,11 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			path: getThoughtCurvePath(from, to, fromSide, toSide),
 		}
 	}
-	
+
 	function getThoughtCanvasPoint(event: PointerEvent) {
-		const canvas = (event.currentTarget as HTMLElement).closest('.thought-canvas')
+		const canvas = (event.currentTarget as HTMLElement).closest(
+			'.thought-canvas',
+		)
 		const rect = canvas?.getBoundingClientRect()
 		if (!rect) return { x: 0, y: 0 }
 		return {
@@ -2402,7 +2536,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			y: event.clientY - rect.top,
 		}
 	}
-	
+
 	function findThoughtPortSnap(
 		x: number,
 		y: number,
@@ -2413,18 +2547,20 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			| undefined
 		thoughtNodes.value.forEach(node => {
 			if (node.id === sourceNodeId) return
-				; (['top', 'right', 'bottom', 'left'] as ThoughtPortSide[]).forEach(side => {
+			;(['top', 'right', 'bottom', 'left'] as ThoughtPortSide[]).forEach(
+				side => {
 					const point = getThoughtPortPoint(node.id, side)
 					if (!point) return
 					const distance = Math.hypot(point.x - x, point.y - y)
 					if (distance <= 54 && (!best || distance < best.distance)) {
 						best = { nodeId: node.id, side, distance }
 					}
-				})
+				},
+			)
 		})
 		return best ? { snapNodeId: best.nodeId, snapSide: best.side } : {}
 	}
-	
+
 	function startThoughtLinkDrag(
 		event: PointerEvent,
 		node: ThoughtNode,
@@ -2441,9 +2577,9 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			x: point.x,
 			y: point.y,
 		}
-			; (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+		;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
 	}
-	
+
 	function moveThoughtLinkDrag(event: PointerEvent) {
 		if (!draggingThoughtLink.value) return
 		const point = getThoughtCanvasPoint(event)
@@ -2459,7 +2595,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			...snap,
 		}
 	}
-	
+
 	function stopThoughtLinkDrag() {
 		const drag = draggingThoughtLink.value
 		if (!drag) return
@@ -2468,7 +2604,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		draggingThoughtLink.value = null
 	}
-	
+
 	function startThoughtDrag(event: PointerEvent, node: ThoughtNode) {
 		const target = event.target as HTMLElement
 		if (target.closest('textarea, button')) return
@@ -2480,9 +2616,9 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			originX: node.x,
 			originY: node.y,
 		}
-			; (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
+		;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
 	}
-	
+
 	function moveThoughtDrag(event: PointerEvent) {
 		if (!draggingThoughtNode.value) return
 		const node = thoughtNodes.value.find(
@@ -2503,13 +2639,13 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		node.x = next.x
 		node.y = next.y
 	}
-	
+
 	function stopThoughtDrag() {
 		if (!draggingThoughtNode.value) return
 		draggingThoughtNode.value = null
 		saveThoughtBoard()
 	}
-	
+
 	function thoughtNodeClass(node: ThoughtNode) {
 		return [
 			'thought-node',
@@ -2521,7 +2657,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			},
 		]
 	}
-	
+
 	function thoughtNodeLabel(kind: ThoughtNodeKind) {
 		return {
 			important: '重要',
@@ -2530,7 +2666,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			custom: '推理',
 		}[kind]
 	}
-	
+
 	function isHostImportantHint(question: Question) {
 		return Boolean(
 			question.important &&
@@ -2538,11 +2674,11 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			question.author.id === room.value.host.id,
 		)
 	}
-	
+
 	function hasClueSignal(question: Question) {
 		return hasImportantSignal(question) && !isHostImportantHint(question)
 	}
-	
+
 	function getQuestionSortTime(question: Question) {
 		const cached = questionSortTimes.get(question.id)
 		if (typeof cached === 'number') return cached
@@ -2551,7 +2687,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		questionSortTimes.set(question.id, sortTime)
 		return sortTime
 	}
-	
+
 	function upsertQuestion(question: Question) {
 		if (!room.value) return
 		const nextQuestion = hydrateQuestion(question)
@@ -2572,7 +2708,8 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		)
 		if (index >= 0) {
 			const existingQuestion = room.value.questions[index]
-			nextQuestion.clientKey = nextQuestion.clientKey ?? existingQuestion.clientKey
+			nextQuestion.clientKey =
+				nextQuestion.clientKey ?? existingQuestion.clientKey
 			nextQuestion.clientSortAt =
 				nextQuestion.clientSortAt ?? existingQuestion.clientSortAt
 			room.value.questions.splice(index, 1, nextQuestion)
@@ -2580,7 +2717,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			room.value.questions.unshift(nextQuestion)
 		}
 	}
-	
+
 	function normalizeAmbience(roomData: RoomState): RoomAmbience {
 		const cached =
 			roomAmbienceCache.get(roomData.code) ?? loadCachedAmbience(roomData.code)
@@ -2606,7 +2743,8 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		return {
 			backgroundImageDataUrl:
-				source.backgroundImageDataUrl ?? DEFAULT_AMBIENCE.backgroundImageDataUrl,
+				source.backgroundImageDataUrl ??
+				DEFAULT_AMBIENCE.backgroundImageDataUrl,
 			backgroundPreset: isAmbiencePresetId(source.backgroundPreset)
 				? source.backgroundPreset
 				: DEFAULT_AMBIENCE.backgroundPreset,
@@ -2617,11 +2755,11 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			),
 		}
 	}
-	
+
 	function isAmbiencePresetId(value: unknown): value is AmbiencePresetId {
 		return AMBIENCE_PRESETS.some(preset => preset.id === value)
 	}
-	
+
 	function syncAmbienceFromRoom(roomData: RoomState) {
 		syncingAmbience = true
 		const nextAmbience = normalizeAmbience(roomData)
@@ -2634,7 +2772,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			syncingAmbience = false
 		})
 	}
-	
+
 	function rememberRoomAmbience(code: string, ambience: RoomAmbience) {
 		roomAmbienceCache.set(code, { ...ambience })
 		try {
@@ -2646,7 +2784,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			// Large uploaded audio can exceed browser storage quota; live preview still works.
 		}
 	}
-	
+
 	function loadCachedAmbience(code: string): RoomAmbience | undefined {
 		const cached = localStorage.getItem(STORAGE_AMBIENCE_PREFIX + code)
 		if (!cached) return undefined
@@ -2670,15 +2808,15 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			return undefined
 		}
 	}
-	
+
 	function clampVolume(value: number) {
 		return Math.min(100, Math.max(0, Math.round(Number(value) || 0)))
 	}
-	
+
 	function cssUrl(value: string) {
 		return `url("${value.replace(/["\\]/g, '\\$&')}")`
 	}
-	
+
 	function connectSocket(code: string) {
 		if (!socket) {
 			socket = io(API_BASE, { transports: ['websocket', 'polling'] })
@@ -2697,8 +2835,10 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 				selectedRole.value = canHost.value ? 'host' : 'player'
 				syncAmbienceFromRoom(hydratedRoom)
 				syncSelectedSoupFromRoom(hydratedRoom)
-				if (hydratedRoom.settlement) settlement.value = hydrateSettlement(hydratedRoom.settlement)
-				if (hydratedRoom.mvp) mvpResult.value = hydrateMvpResult(hydratedRoom.mvp)
+				if (hydratedRoom.settlement)
+					settlement.value = hydrateSettlement(hydratedRoom.settlement)
+				if (hydratedRoom.mvp)
+					mvpResult.value = hydrateMvpResult(hydratedRoom.mvp)
 				nextTick(() => restoreCanvas())
 			})
 			socket.on(
@@ -2768,20 +2908,14 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			})
 			socket.on(
 				'question-added',
-				(event: {
-					roomCode: string
-					question: Question
-				}) => {
+				(event: { roomCode: string; question: Question }) => {
 					if (event.roomCode !== room.value?.code) return
 					upsertQuestion(event.question)
 				},
 			)
 			socket.on(
 				'question-updated',
-				(event: {
-					roomCode: string
-					question: Question
-				}) => {
+				(event: { roomCode: string; question: Question }) => {
 					if (event.roomCode !== room.value?.code) return
 					upsertQuestion(event.question)
 				},
@@ -2805,7 +2939,8 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 					{ ...event, user: hydrateRoomMember(event.user) },
 					...presenceEvents.value,
 				].slice(0, 5)
-				const notify = event.type === 'join' ? ElMessage.success : ElMessage.info
+				const notify =
+					event.type === 'join' ? ElMessage.success : ElMessage.info
 				notify(event.message)
 			})
 			socket.on(
@@ -2819,32 +2954,32 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		joinSocketRoom(code)
 	}
-	
+
 	function joinSocketRoom(code: string) {
 		socket?.emit('join-room', {
 			roomCode: code,
 			user: user.value
 				? {
-					id: user.value.id,
-					username: user.value.username,
-					displayName: user.value.displayName,
-					points: user.value.points,
-					rankTitle: user.value.rankTitle,
-				}
+						id: user.value.id,
+						username: user.value.username,
+						displayName: user.value.displayName,
+						points: user.value.points,
+						rankTitle: user.value.rankTitle,
+					}
 				: undefined,
 		})
 	}
-	
+
 	function leaveCurrentRoom() {
 		socket?.emit('leave-room')
 		roomMembers.value = []
 	}
-	
+
 	function handleBeforeUnload() {
 		leaveCurrentRoom()
 		socket?.disconnect()
 	}
-	
+
 	function updateShareUrl() {
 		if (!room.value) return
 		const url = new URL(window.location.href)
@@ -2852,7 +2987,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		window.history.replaceState({}, '', url)
 		shareUrl.value = url.toString()
 	}
-	
+
 	async function copyShareUrl() {
 		if (
 			navigator.clipboard &&
@@ -2873,13 +3008,13 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		ElMessage.success('房间链接已复制')
 	}
-	
+
 	function queueRoomSave() {
 		if (!canHost.value || !room.value) return
 		window.clearTimeout(roomSaveTimer)
 		roomSaveTimer = window.setTimeout(saveRoom, 350)
 	}
-	
+
 	async function saveRoom() {
 		if (!canHost.value || !room.value) return
 		savingRoom.value = true
@@ -2935,7 +3070,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			savingRoom.value = false
 		}
 	}
-	
+
 	async function addQuestion() {
 		const text = questionText.value.trim()
 		if (!room.value) return ElMessage.warning('请先进入房间')
@@ -2971,12 +3106,12 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			sendingQuestion.value = false
 		}
 	}
-	
+
 	async function submitQuestionFromBigScreen(value?: string) {
 		if (typeof value === 'string') questionText.value = value
 		await addQuestion()
 	}
-	
+
 	function updateRoomField(
 		field: 'title' | 'surface' | 'answer',
 		value: string,
@@ -2984,7 +3119,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		if (!room.value) return
 		room.value[field] = value
 	}
-	
+
 	async function setVerdict(questionId: string, verdict: Verdict) {
 		if (!canHost.value || !room.value) return
 		const response = await request<QuestionPatchResponse>(
@@ -2996,7 +3131,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		)
 		applyQuestionPatchResponse(response)
 	}
-	
+
 	async function updateQuestionScoring(
 		question: Question,
 		patch: Partial<
@@ -3020,7 +3155,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		)
 		applyQuestionPatchResponse(response)
 	}
-	
+
 	async function toggleImportant(question: Question) {
 		if (!canHost.value || !room.value) return
 		const response = await request<QuestionPatchResponse>(
@@ -3032,17 +3167,17 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		)
 		applyQuestionPatchResponse(response)
 	}
-	
+
 	function openMemberImportant(member: MemberStats) {
 		selectedMember.value = member
 		memberDialogOpen.value = true
 	}
-	
+
 	function openSoupHistoryDetail(item: SoupHistoryItem) {
 		selectedSoupHistoryItem.value = item
 		soupHistoryDetailOpen.value = true
 	}
-	
+
 	function canTransferHostTo(member: MemberStats) {
 		return Boolean(
 			canHost.value &&
@@ -3052,7 +3187,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			member.userId !== user.value.id,
 		)
 	}
-	
+
 	async function transferHost(member: MemberStats) {
 		if (!room.value || !canTransferHostTo(member)) return
 		const confirmed = window.confirm(
@@ -3074,7 +3209,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		ElMessage.success(`已将主持人交给 ${member.displayName}`)
 	}
-	
+
 	function openToolDock(panel: 'host' | 'player' | 'answer' | 'canvas') {
 		if ((panel === 'host' || panel === 'answer') && !canHost.value)
 			return ElMessage.warning('只有主持人可以使用这个面板')
@@ -3089,19 +3224,18 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			})
 		}
 	}
-	
+
 	async function revealAnswer() {
 		if (!canHost.value || !room.value) return
-		settlement.value = hydrateSettlement(await request<Settlement>(
-			`/rooms/${room.value.code}/reveal`,
-			{
+		settlement.value = hydrateSettlement(
+			await request<Settlement>(`/rooms/${room.value.code}/reveal`, {
 				method: 'POST',
-			},
-		))
+			}),
+		)
 		settlementDialogOpen.value = true
 		await joinRoom(room.value.code, false)
 	}
-	
+
 	function handleSettlementClosed() {
 		if (!canHost.value || !room.value?.revealed || room.value.mvp) return
 		if (!settlement.value?.entries.length) return
@@ -3112,7 +3246,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		selectedMvpUserId.value = mvpCandidates.value[0]?.id ?? ''
 		mvpSelectDialogOpen.value = true
 	}
-	
+
 	async function submitMvpSelection() {
 		if (!room.value || !selectedMvpUserId.value) {
 			ElMessage.warning('请选择一位 MVP 玩家')
@@ -3136,21 +3270,24 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			mvpSubmitting.value = false
 		}
 	}
-	
+
 	async function rateCurrentSoup(rating: number) {
 		if (!room.value || !canRateCurrentSoup.value) return
 		try {
-			const data = await request<RoomState>(`/rooms/${room.value.code}/rating`, {
-				method: 'POST',
-				body: JSON.stringify({ rating }),
-			})
+			const data = await request<RoomState>(
+				`/rooms/${room.value.code}/rating`,
+				{
+					method: 'POST',
+					body: JSON.stringify({ rating }),
+				},
+			)
 			room.value = hydrateRoom(data)
 			ElMessage.success('评分已提交')
 		} catch (error) {
 			ElMessage.error(error instanceof Error ? error.message : '评分失败')
 		}
 	}
-	
+
 	async function uploadAvatar(file: File) {
 		const dataUrl = await fileToDataUrl(file)
 		const updatedUser = await request<AuthUser>('/auth/me', {
@@ -3165,7 +3302,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		ElMessage.success('头像已更新')
 	}
-	
+
 	function beforeAvatarUpload(file: File) {
 		if (!file.type.startsWith('image/')) {
 			ElMessage.warning('请选择图片文件')
@@ -3178,7 +3315,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		void uploadAvatar(file)
 		return false
 	}
-	
+
 	function beforeBackgroundUpload(file: File) {
 		if (!canHost.value) {
 			ElMessage.warning('只有主持人可以更改房间背景')
@@ -3195,13 +3332,13 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		void applyBackgroundFile(file)
 		return false
 	}
-	
+
 	async function applyBackgroundFile(file: File) {
 		const dataUrl = await fileToDataUrl(file)
 		applyAmbiencePatch({ backgroundImageDataUrl: dataUrl })
 		ElMessage.success('房间背景已更新')
 	}
-	
+
 	function beforeMusicUpload(file: File) {
 		if (!canHost.value) {
 			ElMessage.warning('只有主持人可以更改背景音乐')
@@ -3218,7 +3355,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		void applyMusicFile(file)
 		return false
 	}
-	
+
 	async function applyMusicFile(file: File) {
 		const dataUrl = await fileToDataUrl(file)
 		applyAmbiencePatch({
@@ -3227,7 +3364,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		})
 		ElMessage.success('房间背景音乐已载入')
 	}
-	
+
 	function applyAmbiencePatch(patch: Partial<RoomAmbience>) {
 		if (!canHost.value || !room.value) return
 		const nextAmbience = {
@@ -3242,7 +3379,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		ambienceDirty = true
 		queueRoomSave()
 	}
-	
+
 	function chooseAmbiencePreset(presetId: AmbiencePresetId) {
 		if (!canHost.value) return
 		applyAmbiencePatch({
@@ -3251,7 +3388,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		})
 		ElMessage.success('房间氛围已切换')
 	}
-	
+
 	async function toggleMusicPlayback() {
 		if (!roomMusicDataUrl.value || !audioRef.value) {
 			return ElMessage.warning('等待主持人上传房间音乐')
@@ -3270,13 +3407,13 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			ElMessage.warning('浏览器需要你点击页面后才能播放音乐')
 		}
 	}
-	
+
 	function clearBackgroundImage() {
 		if (!canHost.value) return
 		applyAmbiencePatch({ backgroundImageDataUrl: '' })
 		ElMessage.success('已恢复为预设背景')
 	}
-	
+
 	function clearMusic() {
 		if (!canHost.value) return
 		audioRef.value?.pause()
@@ -3284,7 +3421,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		applyAmbiencePatch({ musicDataUrl: '', musicName: '' })
 		ElMessage.success('房间背景音乐已移除')
 	}
-	
+
 	function resetAmbience() {
 		if (!canHost.value) return
 		audioRef.value?.pause()
@@ -3299,7 +3436,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		ElMessage.success('沉浸设置已重置')
 	}
-	
+
 	function fileToDataUrl(file: File) {
 		return new Promise<string>((resolve, reject) => {
 			const reader = new FileReader()
@@ -3308,7 +3445,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			reader.readAsDataURL(file)
 		})
 	}
-	
+
 	async function removeQuestion(questionId: string) {
 		if (!canHost.value || !room.value) return
 		const response = await request<QuestionDeleteResponse>(
@@ -3319,7 +3456,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		)
 		applyQuestionDeleteResponse(response)
 	}
-	
+
 	function getCanvasPoint(event: PointerEvent) {
 		const canvas = canvasRef.value
 		if (!canvas) return { x: 0, y: 0 }
@@ -3329,14 +3466,14 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			y: ((event.clientY - rect.top) / rect.height) * canvas.height,
 		}
 	}
-	
+
 	function startDrawing(event: PointerEvent) {
 		if (!canHost.value) return
 		isDrawing.value = true
 		lastPoint.value = getCanvasPoint(event)
 		canvasRef.value?.setPointerCapture(event.pointerId)
 	}
-	
+
 	function draw(event: PointerEvent) {
 		if (!isDrawing.value || !lastPoint.value || !canHost.value) return
 		const canvas = canvasRef.value
@@ -3354,7 +3491,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		lastPoint.value = point
 		queueCanvasPreview()
 	}
-	
+
 	function stopDrawing(event?: PointerEvent) {
 		if (!isDrawing.value) return
 		isDrawing.value = false
@@ -3362,12 +3499,12 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		if (event) canvasRef.value?.releasePointerCapture(event.pointerId)
 		saveCanvas(true)
 	}
-	
+
 	function queueCanvasPreview() {
 		window.clearTimeout(canvasPreviewTimer)
 		canvasPreviewTimer = window.setTimeout(() => emitCanvasPreview(), 60)
 	}
-	
+
 	function emitCanvasPreview() {
 		const canvas = canvasRef.value
 		if (!canvas || !room.value) return
@@ -3377,7 +3514,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			canvasDataUrl: room.value.canvasDataUrl,
 		})
 	}
-	
+
 	function saveCanvas(immediate = false) {
 		emitCanvasPreview()
 		if (immediate) {
@@ -3387,7 +3524,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 			queueRoomSave()
 		}
 	}
-	
+
 	function clearCanvas(showMessage = true) {
 		const canvas = canvasRef.value
 		const context = canvas?.getContext('2d')
@@ -3401,7 +3538,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		void saveRoom()
 		if (showMessage) ElMessage.success('画板已清空')
 	}
-	
+
 	function resizeCanvas() {
 		const canvas = canvasRef.value
 		const wrap = canvasWrapRef.value
@@ -3413,7 +3550,7 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		canvas.height = Math.max(240, Math.floor(rect.height * ratio))
 		restoreCanvas(previous)
 	}
-	
+
 	function restoreCanvas(dataUrl = room.value?.canvasDataUrl) {
 		const canvas = canvasRef.value
 		const context = canvas?.getContext('2d')
@@ -3427,14 +3564,13 @@ export function useTurtleSoupRoom(options: { bodyClass?: string } = {}) {
 		}
 		image.src = dataUrl
 	}
-	
+
 	function formatTime(time: string) {
 		return new Intl.DateTimeFormat('zh-CN', {
 			hour: '2-digit',
 			minute: '2-digit',
 		}).format(new Date(time))
 	}
-	
 
 	return {
 		activeAmbiencePreset,

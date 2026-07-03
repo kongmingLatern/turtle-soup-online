@@ -230,7 +230,8 @@ function escapeHtml(value: string) {
 				:model-value="activeBlock"
 				class="rich-block-select"
 				:disabled="disabled"
-				:teleported="false"
+				:teleported="true"
+				popper-class="rich-block-select-popper"
 				size="small"
 				@change="setBlock"
 			>
@@ -428,3 +429,9 @@ function escapeHtml(value: string) {
 		/>
 	</div>
 </template>
+
+<style lang="scss">
+.rich-block-select-popper {
+	z-index: 5000 !important;
+}
+</style>

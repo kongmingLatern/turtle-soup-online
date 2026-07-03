@@ -5,6 +5,7 @@ import { useTurtleSoupRoom } from '@/composables/useTurtleSoupRoom'
 const {
 	answeredQuestions,
 	authSubmitting,
+	beforeAvatarUpload,
 	canHost,
 	copyShareUrl,
 	createRoom,
@@ -74,6 +75,7 @@ const {
 		:auth-submitting="authSubmitting"
 		:creating-soup="creatingSoup"
 		:deleting-soup-id="deletingSoupId"
+		:before-avatar-upload="beforeAvatarUpload"
 		@copy-share-url="copyShareUrl"
 		@logout="logout"
 		@toggle-theme="isDark = !isDark"

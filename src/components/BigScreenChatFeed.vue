@@ -180,7 +180,10 @@ function getQuestionSignalTags(question: Question) {
 					{{ question.verdict ? stampLabels[question.verdict] : '待定' }}
 				</div>		
 			</div>
-			<footer class="text-12px color-#F8D74A text-right">
+			<footer 
+			:class="question.author.id === user?.id ? ['text-12px', 'color-#F8D74A ', 'text-right'] :
+				['text-12px','color-#F8D74A' ]"
+			>
 				<span>主持人：{{ question.verdict ? verdictLabels[question.verdict] : '待回应' }}</span>
 			</footer>
 			</el-space>

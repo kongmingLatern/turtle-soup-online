@@ -12,9 +12,10 @@ import {
 	VideoPlay,
 } from '@element-plus/icons-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import BigScreenChatFeed from '@/components/BigScreenChatFeed.vue'
 import RichTextEditor from '@/components/BigScreenRichTextEditor.vue'
-import { sanitizeRichText } from '../utils/richText.ts'
+import { richTextToPlainText, sanitizeRichText } from '../utils/richText.ts'
 
 type Verdict = 'yes' | 'no' | 'both' | 'irrelevant'
 type SurfaceViewMode = 'preview' | 'edit'
@@ -143,6 +144,7 @@ const props = withDefaults(
 		authSubmitting?: boolean
 		creatingSoup?: boolean
 		deletingSoupId?: string
+		beforeAvatarUpload?: (file: File) => boolean
 	}>(),
 	{
 		room: null,
@@ -168,6 +170,7 @@ const props = withDefaults(
 		authSubmitting: false,
 		creatingSoup: false,
 		deletingSoupId: '',
+		beforeAvatarUpload: undefined,
 	},
 )
 
@@ -260,7 +263,7 @@ const soupDraft = reactive<SoupPayload>({
 })
 
 const fallbackSurfaceHtml =
-	'<p>深夜，一位男子走进一家汤店，点了一碗海龟汤。</p><p>喝完汤后，他付了钱，平静地离开了。</p><p>第二天，店主却在店门口发现了他的尸体。</p><p><strong>问题:</strong> 他是怎么死的？</p>'
+	''
 
 const verdictLabels: Record<Verdict, string> = {
 	yes: '是',
@@ -304,50 +307,15 @@ const truthGuessLabels: Record<TruthGuess, string> = {
 }
 
 const fallbackQuestions: Question[] = [
-	{
-		id: 'demo-1',
-		author: { id: 'demo-a', username: 'afei', displayName: '探长阿飞' },
-		createdAt: new Date().toISOString(),
-		text: '他是自杀吗？',
-		verdict: 'no',
-		important: false,
-	} as Question,
-	{
-		id: 'demo-2',
-		author: { id: 'demo-b', username: 'orange', displayName: '小橘同学' },
-		createdAt: new Date().toISOString(),
-		text: '他喝汤之前身体有问题吗？',
-		verdict: 'both',
-		important: false,
-	} as Question,
-	{
-		id: 'demo-3',
-		author: { id: 'demo-c', username: 'cat', displayName: '迷路的猫' },
-		createdAt: new Date().toISOString(),
-		text: '店里除了店主还有别人吗？',
-		verdict: 'no',
-		important: false,
-	} as Question,
-	{
-		id: 'demo-4',
-		author: { id: 'demo-d', username: 'soup', displayName: '福尔摩汤' },
-		createdAt: new Date().toISOString(),
-		text: '他是被店主杀害的吗？',
-		verdict: 'yes',
-		important: true,
-	} as Question,
+	
 ]
 
-const fallbackRanks = [
-	{ rank: 1, name: '探长阿飞', total: 1250 },
-	{ rank: 2, name: '小橘同学', total: 980 },
-	{ rank: 3, name: '福尔摩汤', total: 860 },
-	{ rank: 4, name: '迷路的猫', total: 650 },
-	{ rank: 5, name: '逻辑怪', total: 520 },
-	{ rank: 6, name: '汤圆不圆', total: 410 },
-	{ rank: 7, name: '白给少年', total: 300 },
-	{ rank: 8, name: '躺平选手', total: 150 },
-]
+const fallbackRanks: Array<{
+	rank: number
+	name: string
+	total: number
+	avatar?: string
+}> = []
 
 const canvasStyle = computed(() => {
 	const scale = Math.min(
@@ -425,44 +393,7 @@ const clueRows = computed(() => {
 		}))
 
 	if (clues.length || props.room) return clues
-	return [
-		{
-			id: 'demo-clue-1',
-			title: '汤里有毒',
-			author: { id: 'demo-clue-a', username: 'afei', displayName: '探长阿飞' },
-			detail: '男子喝的海龟汤被下了毒。',
-			verdict: 'yes' as Verdict,
-			active: true,
-			tags: [{ key: 'demo-important', label: '关键', tone: 'gold' }],
-		},
-		{
-			id: 'demo-clue-2',
-			title: '汤店的监控坏了',
-			author: { id: 'demo-clue-b', username: 'orange', displayName: '小橘同学' },
-			detail: '案发时监控正好损坏。',
-			verdict: 'no' as Verdict,
-			active: false,
-			tags: [],
-		},
-		{
-			id: 'demo-clue-3',
-			title: '店主的日记',
-			author: { id: 'demo-clue-c', username: 'soup', displayName: '福尔摩汤' },
-			detail: '店主在日记中写下：“他终于来了。”',
-			verdict: 'both' as Verdict,
-			active: false,
-			tags: [],
-		},
-		{
-			id: 'demo-clue-4',
-			title: '门口的血迹',
-			author: { id: 'demo-clue-d', username: 'cat', displayName: '迷路的猫' },
-			detail: '尸体旁边有少量血迹。',
-			verdict: 'irrelevant' as Verdict,
-			active: false,
-			tags: [],
-		},
-	]
+	return []
 })
 
 const rankRows = computed(() => {
@@ -800,6 +731,10 @@ function submitAuthForm() {
 	})
 }
 
+function handleAvatarBeforeUpload(file: File) {
+	return props.beforeAvatarUpload?.(file) ?? false
+}
+
 function resetSoupDraft() {
 	Object.assign(soupDraft, {
 		title: '',
@@ -832,7 +767,32 @@ function closeSoupEditor() {
 	editingSoupId.value = ''
 }
 
+function validateSoupDraft() {
+	const titleLength = soupDraft.title.trim().length
+	const surfaceLength = richTextToPlainText(soupDraft.surface).trim().length
+	const answerLength = richTextToPlainText(soupDraft.answer).trim().length
+	const categoryLength = soupDraft.category.trim().length
+	if (titleLength < 2 || titleLength > 60) {
+		ElMessage.warning('标题长度为 2-60 个字符')
+		return false
+	}
+	if (surfaceLength < 8 || surfaceLength > 2000) {
+		ElMessage.warning('汤面长度为 8-2000 个字符')
+		return false
+	}
+	if (answerLength < 8 || answerLength > 4000) {
+		ElMessage.warning('汤底长度为 8-4000 个字符')
+		return false
+	}
+	if (categoryLength < 1 || categoryLength > 20) {
+		ElMessage.warning('分类长度为 1-20 个字符')
+		return false
+	}
+	return true
+}
+
 function submitSoupDraft() {
+	if (!validateSoupDraft()) return
 	emit('save-soup', { ...soupDraft }, editingSoupId.value || undefined)
 	closeSoupEditor()
 }
@@ -843,6 +803,19 @@ function selectSoup(event: Event) {
 
 function openRoomConfig() {
 	roomConfigOpen.value = true
+}
+
+function openLoginPanel() {
+	authMode.value = 'login'
+	roomConfigOpen.value = true
+}
+
+function handleTopAuthAction() {
+	if (props.user) {
+		emit('logout')
+		return
+	}
+	openLoginPanel()
 }
 
 function closeRoomConfig() {
@@ -910,6 +883,22 @@ onBeforeUnmount(() => {
 				</section>
 
 				<nav class="top-actions" aria-label="大屏操作">
+					<div v-if="user" class="top-user-card">
+						<el-upload
+							:show-file-list="false"
+							:before-upload="handleAvatarBeforeUpload"
+							accept="image/*"
+						>
+							<button class="top-avatar-button" type="button" title="修改头像">
+								<img v-if="user.avatarDataUrl" :src="user.avatarDataUrl" alt="" />
+								<span v-else>{{ user.displayName.slice(0, 1) }}</span>
+							</button>
+						</el-upload>
+						<div class="top-user-copy">
+							<strong>{{ user.displayName }}</strong>
+							<span>@{{ user.username }} · {{ user.rankTitle ?? '路人甲' }}<template v-if="typeof user.points === 'number'"> · {{ user.points }} 分</template></span>
+						</div>
+					</div>
 					<!-- <button type="button" :disabled="!room" @click="emit('copy-share-url')">
 						<el-icon><Share /></el-icon>
 						<span>公告</span>
@@ -925,9 +914,12 @@ onBeforeUnmount(() => {
 						</el-icon>
 						<span>{{ isDark ? '亮色' : '暗色' }}</span>
 					</button> -->
-					<button type="button" :disabled="!user" @click="emit('logout')">
-						<el-icon><SwitchButton /></el-icon>
-						<span>退出登录</span>
+					<button type="button" @click="handleTopAuthAction">
+						<el-icon>
+							<SwitchButton v-if="user" />
+							<User v-else />
+						</el-icon>
+						<span>{{ user ? '退出登录' : '登录' }}</span>
 					</button>
 				</nav>
 			</header>
@@ -1322,10 +1314,10 @@ onBeforeUnmount(() => {
 				<section class="quick-ask">
 					<strong>快捷提问</strong>
 					<div>
-						<button type="button" :disabled="!canAsk" @click="quickAsk('是吗？')">是</button>
-						<button type="button" :disabled="!canAsk" @click="quickAsk('不是吗？')">不是</button>
-						<button type="button" :disabled="!canAsk" @click="quickAsk('主持人不知道吗？')">不知道</button>
-						<button type="button" :disabled="!canAsk" @click="quickAsk('这件事与真相无关吗？')">与此无关</button>
+						<button type="button" :disabled="!canAsk" @click="quickAsk('是正常世界观吗')">是正常世界观吗</button>
+						<button type="button" :disabled="!canAsk" @click="quickAsk('有死人吗')">有人死吗</button>
+						<button type="button" :disabled="!canAsk" @click="quickAsk('我是人类吗')">我是人类吗</button>
+						<button type="button" :disabled="!canAsk" @click="quickAsk('我死了吗')">我死了吗</button>
 					</div>
 					<p>点击快捷提问，或在右侧输入你的问题...</p>
 				</section>
@@ -1514,7 +1506,7 @@ onBeforeUnmount(() => {
 									:disabled="Boolean(question.clientStatus)"
 									@click="setQuestionVerdict(question, 'yes')"
 								>
-									肯定
+									是
 								</button>
 								<button
 									:class="{ active: question.verdict === 'no' }"
@@ -1522,7 +1514,7 @@ onBeforeUnmount(() => {
 									:disabled="Boolean(question.clientStatus)"
 									@click="setQuestionVerdict(question, 'no')"
 								>
-									否定
+									不是
 								</button>
 								<button
 									:class="{ active: question.verdict === 'both' }"
@@ -1530,7 +1522,7 @@ onBeforeUnmount(() => {
 									:disabled="Boolean(question.clientStatus)"
 									@click="setQuestionVerdict(question, 'both')"
 								>
-									部分
+									是也不是
 								</button>
 								<button
 									:class="{ active: question.verdict === 'irrelevant' }"
@@ -1959,15 +1951,18 @@ button.meta-chip {
 	min-width: 196px;
 }
 
-.top-actions {
-	// display: grid;
-	// grid-template-columns: repeat(4, 1fr);
-	// align-self: stretch;
-	display: flex;
-	justify-content: end;
-	align-items: center;
-	background: rgba(5, 6, 7, 0.38);
-}
+	.top-actions {
+		// display: grid;
+		// grid-template-columns: repeat(4, 1fr);
+		// align-self: stretch;
+		display: flex;
+		justify-content: end;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+		padding: 0 8px;
+		background: rgba(5, 6, 7, 0.38);
+	}
 
 .top-actions button {
 	display: grid;
@@ -1981,9 +1976,85 @@ button.meta-chip {
 	padding: 10px;
 }
 
-.top-actions .el-icon {
-	font-size: 27px;
-}
+	.top-actions .el-icon {
+		font-size: 27px;
+	}
+
+	.top-user-card {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		min-width: 0;
+		max-width: 250px;
+		padding: 7px 10px;
+		border: 1px solid rgba(255, 211, 42, 0.22);
+		background:
+			linear-gradient(135deg, rgba(255, 211, 42, 0.14), transparent 48%),
+			rgba(15, 17, 17, 0.9);
+		box-shadow: inset 3px 0 0 rgba(255, 211, 42, 0.82);
+		clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+	}
+
+	.top-user-card .el-upload {
+		display: block;
+		flex: 0 0 auto;
+	}
+
+	.top-actions .top-avatar-button {
+		width: 44px;
+		height: 44px;
+		padding: 0;
+		display: grid;
+		place-items: center;
+		overflow: hidden;
+		border: 2px solid rgba(255, 211, 42, 0.72);
+		border-radius: 50%;
+		background: #111315;
+		color: #ffd400;
+		font-size: 18px;
+		font-weight: 1000;
+		cursor: pointer;
+		box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.42);
+	}
+
+	.top-actions .top-avatar-button:hover {
+		border-color: #00d5ff;
+		box-shadow:
+			0 0 0 2px rgba(0, 213, 255, 0.22),
+			0 0 18px rgba(0, 213, 255, 0.28);
+	}
+
+	.top-avatar-button img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+	}
+
+	.top-user-copy {
+		min-width: 0;
+		display: grid;
+		gap: 3px;
+		text-align: left;
+	}
+
+	.top-user-copy strong,
+	.top-user-copy span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.top-user-copy strong {
+		color: #f8f1d2;
+		font-size: 15px;
+		line-height: 1.1;
+	}
+
+	.top-user-copy span {
+		color: rgba(248, 241, 210, 0.62);
+		font-size: 11px;
+		font-weight: 800;
+	}
 
 .screen-grid {
 	display: grid;
@@ -2551,7 +2622,7 @@ button.meta-chip {
 	flex-wrap: wrap;
 	gap: 5px;
 	margin-top: 7px;
-	padding-right: 72px;
+	// padding-right: 72px;
 }
 
 .question-signal-tags span {
