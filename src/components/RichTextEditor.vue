@@ -230,6 +230,7 @@ function escapeHtml(value: string) {
 				:model-value="activeBlock"
 				class="rich-block-select"
 				:disabled="disabled"
+				:teleported="false"
 				size="small"
 				@change="setBlock"
 			>

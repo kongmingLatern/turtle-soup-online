@@ -7,6 +7,10 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    BigScreenChatFeed: typeof import('./src/components/BigScreenChatFeed.vue')['default']
+    BigScreenRichTextEditor: typeof import('./src/components/BigScreenRichTextEditor.vue')['default']
+    BigScreenView: typeof import('./src/components/BigScreenView.vue')['default']
+    CommonRichTextEditor: typeof import('./src/components/CommonRichTextEditor.vue')['default']
     ElAvatar: typeof import('element-plus/es/components/avatar/index.mjs')['ElAvatar']
     ElButton: typeof import('element-plus/es/components/button/index.mjs')['ElButton']
     ElCheckbox: typeof import('element-plus/es/components/checkbox/index.mjs')['ElCheckbox']
@@ -17,6 +21,7 @@ declare module 'vue' {
     ElEmpty: typeof import('element-plus/es/components/empty/index.mjs')['ElEmpty']
     ElForm: typeof import('element-plus/es/components/form/index.mjs')['ElForm']
     ElFormItem: typeof import('element-plus/es/components/form/index.mjs')['ElFormItem']
+    ElIcon: typeof import('element-plus/es/components/icon/index.mjs')['ElIcon']
     ElInput: typeof import('element-plus/es/components/input/index.mjs')['ElInput']
     ElOption: typeof import('element-plus/es/components/select/index.mjs')['ElOption']
     ElPopover: typeof import('element-plus/es/components/popover/index.mjs')['ElPopover']
@@ -34,5 +39,7 @@ declare module 'vue' {
     ElTooltip: typeof import('element-plus/es/components/tooltip/index.mjs')['ElTooltip']
     ElUpload: typeof import('element-plus/es/components/upload/index.mjs')['ElUpload']
     RichTextEditor: typeof import('./src/components/RichTextEditor.vue')['default']
+    RouterLink: typeof import('vue-router')['RouterLink']
+    RouterView: typeof import('vue-router')['RouterView']
   }
 }

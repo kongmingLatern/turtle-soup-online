@@ -1,6 +1,10 @@
 import Components from 'unplugin-vue-components/vite'
+import UnoCSS from 'unocss/vite'
 import { defineConfig } from 'vite'
 import path from 'path'
+import presetAttributify from '@unocss/preset-attributify'
+import presetIcons from '@unocss/preset-icons'
+import presetUno from '@unocss/preset-uno'
 import vue from '@vitejs/plugin-vue'
 
 const elementPlusComponentDirs: Record<string, string> = {
@@ -34,6 +38,7 @@ const elementPlusComponentDirs: Record<string, string> = {
 	ElTooltip: 'tooltip',
 	ElUpload: 'upload',
 	ElSpace: 'space',
+	ElIcon: 'icon',
 }
 
 function ElementPlusDirectResolver() {
@@ -60,6 +65,9 @@ export default defineConfig({
 		vue(),
 		Components({
 			resolvers: [ElementPlusDirectResolver()],
+		}),
+		UnoCSS({
+			presets: [presetAttributify(), presetIcons(), presetUno()],
 		}),
 	],
 	build: {
