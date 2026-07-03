@@ -1452,6 +1452,9 @@ onBeforeUnmount(() => {
 									{{ mvpSubmitting ? '公布中' : '公布 MVP' }}
 								</button>
 							</div>
+								<div v-else-if="canHost && !mvpCandidates.length" class="mvp-select-console">
+									本局没有MVP哦
+							</div>
 							<div v-else class="empty-state">等待主持人公布 MVP</div>
 						</section>
 					</div>
